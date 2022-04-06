@@ -11,14 +11,14 @@ from river.utils.skmultiflow_utils import (
     normalize_values_in_dict,
 )
 
-from river.tree.nodes.branch import (
+from .nodes.branch import (
     DTBranch,
     NominalBinaryBranch,
     NominalMultiwayBranch,
     NumericBinaryBranch,
     NumericMultiwayBranch,
 )
-from leaf import HTLeaf
+from .nodes.leaf import IOLINLeaf
 
 try:
     import graphviz
@@ -77,7 +77,7 @@ class IOLINTree(ABC):
         self.remove_poor_attrs: bool = remove_poor_attrs
         self.merit_preprune: bool = merit_preprune
 
-        self._root: typing.Union[DTBranch, HTLeaf, None] = None
+        self._root: typing.Union[DTBranch, IOLINLeaf, None] = None
         self._n_active_leaves: int = 0
         self._n_inactive_leaves: int = 0
         self._inactive_leaf_size_estimate: float = 0.0
@@ -191,6 +191,7 @@ class IOLINTree(ABC):
         self, numerical_feature=True, multiway_split=False
     ) -> typing.Type[DTBranch]:
         """Create a new split node."""
+        
         if numerical_feature:
             if not multiway_split:
                 return NumericBinaryBranch
@@ -204,8 +205,8 @@ class IOLINTree(ABC):
 
     @abstractmethod
     def _new_leaf(
-        self, initial_stats: dict = None, parent: typing.Union[HTLeaf, DTBranch] = None
-    ) -> HTLeaf:
+        self, initial_stats: dict = None, parent: typing.Union[IOLINLeaf, DTBranch] = None
+    ) -> IOLINLeaf:
         """Create a new learning node.
 
         The characteristics of the learning node depends on the tree algorithm.
@@ -328,7 +329,7 @@ class IOLINTree(ABC):
             self._n_inactive_leaves += 1
             self._n_active_leaves -= 1
 
-    def _find_leaves(self) -> typing.List[HTLeaf]:
+    def _find_leaves(self) -> typing.List[IOLINLeaf]:
         """Find learning nodes in the tree.
 
         Returns
@@ -365,7 +366,7 @@ class IOLINTree(ABC):
         _print = functools.partial(print, file=buffer)
 
         for node in self._root.walk(x, until_leaf=True):
-            if isinstance(node, HTLeaf):
+            if isinstance(node, IOLINLeaf):
                 _print(repr(node))
             else:
                 try:

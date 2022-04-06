@@ -1,6 +1,7 @@
 from .gini_split_criterion import GiniSplitCriterion
 from .hellinger_distance_criterion import HellingerDistanceCriterion
 from .info_gain_split_criterion import InfoGainSplitCriterion
+from .IOLIN_info_gain_split_criterion import IOLINInfoGainSplitCriterion
 from .intra_cluster_variance_reduction_split_criterion import (
     IntraClusterVarianceReductionSplitCriterion,
 )
@@ -14,4 +15,5 @@ __all__ = [
     "IntraClusterVarianceReductionSplitCriterion",
     "VarianceRatioSplitCriterion",
     "VarianceReductionSplitCriterion",
+    "IOLINInfoGainSplitCriterion"
 ]

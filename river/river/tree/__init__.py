@@ -59,6 +59,7 @@ from .hoeffding_tree_regressor import HoeffdingTreeRegressor
 from .isoup_tree_regressor import iSOUPTreeRegressor
 from .label_combination_hoeffding_tree import LabelCombinationHoeffdingTreeClassifier
 from .stochastic_gradient_tree import SGTClassifier, SGTRegressor
+from .IOLIN_tree_classifier import IOLINTreeClassifier
 
 __all__ = [
     "splitter",
@@ -71,4 +72,5 @@ __all__ = [
     "LabelCombinationHoeffdingTreeClassifier",
     "SGTClassifier",
     "SGTRegressor",
+    "IOLINTreeClassifier"
 ]
