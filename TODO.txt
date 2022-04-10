@@ -11,10 +11,16 @@ Change Best Split Function (leaf.py)
 Chris --
 Change Attempt Split Function (IOLINTreeClassifier.py)
 
+    Do we always split with the best split? Or keep Hoeffidnger bound?
+
 Change Learn One Function (IOLINTreeClassifier.py)   
     Implement OLIN Tree
         Need to check depth
 
+        What about when it's a previously unseen categorical variable?
+        
+        Still need to rename stuff to OLIN, but don't want to mess 
+        with files others may be using
 
 Ryan --
 Implements IOLIN
