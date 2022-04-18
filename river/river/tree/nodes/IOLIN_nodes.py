@@ -21,8 +21,8 @@ class LeafMajorityClass(IOLINLeaf):
         Other parameters passed to the learning node.
     """
 
-    def __init__(self, stats, depth, splitter, **kwargs):
-        super().__init__(stats, depth, splitter, **kwargs)
+    def __init__(self, stats, depth, splitter, parents, **kwargs):
+        super().__init__(stats, depth, splitter,parents, **kwargs)
 
     @staticmethod
     def new_nominal_splitter():

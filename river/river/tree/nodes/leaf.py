@@ -205,10 +205,12 @@ class IOLINLeaf(Leaf, abc.ABC):
         Other parameters passed to the learning node.
     """
 
-    def __init__(self, stats, depth, splitter, **kwargs):
+    def __init__(self, stats, depth, splitter, parents,**kwargs):
         super().__init__(**kwargs)
         self.stats = stats
         self.depth = depth
+        
+        self.parents = parents
 
         self.splitter = splitter
 

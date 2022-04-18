@@ -12,15 +12,26 @@ Chris --
 Change Attempt Split Function (IOLINTreeClassifier.py)
 
     Do we always split with the best split? Or keep Hoeffidnger bound?
+    
+        Split all in the last layer, but then don't split if the conditional mutual 
+        information is zero.
 
 Change Learn One Function (IOLINTreeClassifier.py)   
     Implement OLIN Tree
-        Need to check depth
-
-        What about when it's a previously unseen categorical variable?
+        Need to check depth -- Done
         
         Still need to rename stuff to OLIN, but don't want to mess 
         with files others may be using
+        
+        Only let one split per attribute -- Done
+        
+        Create a new tree every batch -- Done
+         
+        Implement batch training --Done
+        
+        Create a new IN Tree --Done
+        
+        QUESTIONS ABOUT EQUATIONS
 
 Ryan --
 Implements IOLIN

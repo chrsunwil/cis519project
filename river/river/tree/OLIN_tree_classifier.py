@@ -1,5 +1,5 @@
 from river import base
-
+from river import metrics
 from .IOLIN_tree import IOLINTree
 from .nodes.branch import DTBranch
 from .nodes.IOLIN_nodes import LeafMajorityClass
@@ -9,6 +9,7 @@ from .split_criterion import (
 )
 from .splitter import GaussianSplitter, Splitter
 
+import math
 
 class OLINTreeClassifier(IOLINTree, base.Classifier):
     """Hoeffding Tree or Very Fast Decision Tree classifier.
@@ -110,6 +111,11 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         stop_mem_management: bool = False,
         remove_poor_attrs: bool = False,
         merit_preprune: bool = True,
+        max_window : int = 60,
+        min_add_count : int = 4,
+        max_add_count : int = 50,
+        inc_add_count : int = 10,
+        red_add_count : int = 10,
     ):
 
         super().__init__(
@@ -140,7 +146,23 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
         # To keep track of the observed classes
         self.classes: set = set()
+        
         self.cur_depth = 0
+        
+        #EQ. 7 HOW DO I IMPLEMENT THIS?
+        self.window = 3 
+        self.add_count = 4
+        
+        self.max_window = max_window
+        
+        self.min_add_count = min_add_count
+        self.max_add_count = max_add_count
+        
+        self.inc_add_count = inc_add_count
+        self.red_add_count = red_add_count
+        
+        self.batch = []
+        self.used_split_features = set()
 
     @IOLINTree.split_criterion.setter
     def split_criterion(self, split_criterion):
@@ -150,7 +172,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
     def leaf_prediction(self, leaf_prediction):
         self._leaf_prediction = LeafMajorityClass
 
-    def _new_leaf(self, initial_stats=None, parent=None):
+    def _new_leaf(self, initial_stats=None, parent=None, parents=None):
         if initial_stats is None:
             initial_stats = {}
         if parent is None:
@@ -158,7 +180,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         else:
             depth = parent.depth + 1
            
-        return LeafMajorityClass(initial_stats, depth, self.splitter)
+        return LeafMajorityClass(initial_stats, depth, self.splitter, parents)
 
     def _new_split_criterion(self):
         split_criterion = IOLINInfoGainSplitCriterion()
@@ -166,21 +188,9 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         return split_criterion
 
     def _attempt_to_split(
-        self, leaf: IOLINLeaf, parent: DTBranch, parent_branch: int, **kwargs
+        self, leaf: IOLINLeaf, **kwargs
     ):
         """Attempt to split a leaf.
-
-        If the samples seen so far are not from the same class then:
-
-        1. Find split candidates and select the top 2.
-        2. Compute the Hoeffding bound.
-        3. If the difference between the top 2 split candidates is larger than the Hoeffding bound:
-           3.1 Replace the leaf node by a split node (branch node).
-           3.2 Add a new leaf node on each branch of the new split node.
-           3.3 Update tree's metrics
-
-        Optional: Disable poor attributes. Depends on the tree's configuration.
-
         Parameters
         ----------
         leaf
@@ -192,42 +202,16 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         kwargs
             Other parameters passed to the new branch.
         """
-        if not leaf.observed_class_distribution_is_pure():  # noqa
-            split_criterion = self._new_split_criterion()
+        split_criterion = self._new_split_criterion()
+        best_split_suggestions = leaf.best_split_suggestions(split_criterion, self)
+        best_split_suggestions.sort()
+        for best_suggestion in best_split_suggestions:
+            if (best_suggestion.merit > 0 
+                and (best_suggestion.feature not in self.used_split_features)): #NEGATIVE MERIT SHOULDN'T SPLIT?
 
-            best_split_suggestions = leaf.best_split_suggestions(split_criterion, self)
-            best_split_suggestions.sort()
-            should_split = False
-            if len(best_split_suggestions) < 2:
-                should_split = len(best_split_suggestions) > 0
-            else:
-                hoeffding_bound = self._hoeffding_bound(
-                    split_criterion.range_of_merit(leaf.stats),
-                    self.split_confidence,
-                    leaf.total_weight,
-                )
-                best_suggestion = best_split_suggestions[-1]
-                second_best_suggestion = best_split_suggestions[-2]
-                if (
-                    best_suggestion.merit - second_best_suggestion.merit
-                    > hoeffding_bound
-                    or hoeffding_bound < self.tie_threshold
-                ):
-                    should_split = True
-                if self.remove_poor_attrs:
-                    poor_atts = set()
-                    # Add any poor attribute to set
-                    for suggestion in best_split_suggestions:
-                        if (
-                            suggestion.feature
-                            and best_suggestion.merit - suggestion.merit
-                            > hoeffding_bound
-                        ):
-                            poor_atts.add(suggestion.feature)
-                    for poor_att in poor_atts:
-                        leaf.disable_attribute(poor_att)
-            if should_split:
-                split_decision = best_split_suggestions[-1]
+#                 print(best_suggestion.feature)
+                
+                split_decision = best_suggestion
                 if split_decision.feature is None:
                     # Pre-pruning - null wins
                     leaf.deactivate()
@@ -237,28 +221,75 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                     branch = self._branch_selector(
                         split_decision.numerical_feature, split_decision.multiway_split
                     )
+
                     leaves = tuple(
-                        self._new_leaf(initial_stats, parent=leaf)
+                        self._new_leaf(initial_stats, parent=leaf, parents=leaf.parents)
                         for initial_stats in split_decision.children_stats
                     )
-                    
-                    self.cur_depth += 1
-                    
-#                     print(self.cur_depth)
+
+                    #Don't think this matters because I build whole network at one time
+    #                 self.cur_depth += 1 #THIS IS ASSUMING THAT ONLY LAST LAYERS CAN SPLIT
+
+        #                     print(self.cur_depth)
 
                     new_split = split_decision.assemble(
                         branch, leaf.stats, leaf.depth, *leaves, **kwargs
                     )
 
+                    for new_leaf in leaves:
+                        new_leaf.parents = [(new_split, 0)]
+
                     self._n_active_leaves -= 1
                     self._n_active_leaves += len(leaves)
-                    if parent is None:
+
+                    parents = leaf.parents
+
+                    if parents is None:
                         self._root = new_split
                     else:
-                        parent.children[parent_branch] = new_split
+                        for parent, parent_branch in parents:
+                            parent.children[parent_branch] = new_split
 
-                # Manage memory
-                self._enforce_size_limit()
+                    self.used_split_features.add(best_suggestion.feature)
+
+                    return leaves
+                return []
+        return []
+
+    
+    def build_IN(self, train_batch,*, sample_weight=1.0):
+        
+        self.classes = set()
+        
+        self._root = self._new_leaf()
+        self.cur_depth = 0
+        self._n_active_leaves = 1 
+        
+        self.used_split_features = set()
+        
+        nodes_to_attempt_split = [self._root] #Reset so that we can learn the new layers
+        
+        
+        while len(nodes_to_attempt_split) > 0: #While there is a node in the last layer (or prev)
+            
+            cur_node = nodes_to_attempt_split.pop(0)
+            
+            self._train_weight_seen_by_model = 0
+            
+            #Teach the current node all of the data
+            ##CREATE A BATCH UPDATE?
+            for x,y, in train_batch:
+                self.classes.add(y)
+                self._train_weight_seen_by_model += sample_weight
+                cur_node.learn_one(x,y, sample_weight=sample_weight, tree=self)
+                
+            #attempt to split the current node. Get back the new children
+            new_leaves = self._attempt_to_split(cur_node)
+#             print(self.used_split_features)
+            nodes_to_attempt_split += new_leaves
+                
+#         print("Built an IN")
+                
 
     def learn_one(self, x, y, *, sample_weight=1.0):
         """Train the model on instance x and corresponding target y.
@@ -287,75 +318,46 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
           observed between split attempts exceed the grace period then attempt
           to split.
         """
+        
+        #Add to the batch
+        self.batch.append((x,y))
+        
+        if len(self.batch) >= self.window + self.add_count:
+            
+            #Build new IN model
+            self.build_IN(train_batch = self.batch[:self.window],sample_weight=sample_weight)
+            
+            
+            err = metrics.Accuracy()
+            for x,y in self.batch[:self.window]:
+                err.update(y, self.predict_one(x))
+            train_err = err.get()
+            err = metrics.Accuracy()
+            for x,y in self.batch[self.window:]:
+                err.update(y, self.predict_one(x))
+            validation_err = err.get()
+            
+            #IS THIS THE SAME AS EXPECTED VALUE OF ERROR? EQ. 9
+            var_diff = ((train_err * (1-train_err))/self.window 
+                        + (validation_err * (1-validation_err))/self.add_count)
+            
+            max_diff = 2.326 * math.sqrt(var_diff)
+            
+            #detect concept drift
+            if (validation_err - train_err) < max_diff:
+                self.add_count = int(min(self.add_count * (1 + (self.inc_add_count/100.0)), 
+                                      self.max_add_count))
+                self.window = min(self.window+self.add_count,self.max_window)
+                self.batch = self.batch[self.add_count:]
+            else:
+                #recalculate size of window
+                #USE EQ. 8 -- I have literally no clue how to do this
+                
 
-        # Updates the set of observed classes
-        self.classes.add(y)
-
-        self._train_weight_seen_by_model += sample_weight
-
-        if self._root is None:
-            self._root = self._new_leaf()
-#             self.cur_depth += 1
-            self._n_active_leaves = 1
-
-        p_node = None
-        node = None
-        if isinstance(self._root, DTBranch):
-            path = iter(self._root.walk(x, until_leaf=False))
-            while True:
-                aux = next(path, None)
-                if aux is None:
-                    break
-                p_node = node
-                node = aux
-        else:
-            node = self._root
-
-        if isinstance(node, IOLINLeaf):
-            node.learn_one(x, y, sample_weight=sample_weight, tree=self)
-            if self._growth_allowed and node.is_active():
-                if node.depth >= self.max_depth:  # Max depth reached
-                    node.deactivate()
-                    self._n_active_leaves -= 1
-                    self._n_inactive_leaves += 1
-                else:
-                    weight_seen = node.total_weight
-                    weight_diff = weight_seen - node.last_split_attempt_at
-                    if weight_diff >= self.grace_period and node.depth >= self.cur_depth:
-#                         print("Node: ", node.depth)
-                        p_branch = (
-                            p_node.branch_no(x)
-                            if isinstance(p_node, DTBranch)
-                            else None
-                        )
-                        self._attempt_to_split(node, p_node, p_branch)
-                        node.last_split_attempt_at = weight_seen
-        else:
-            while True:
-                # Split node encountered a previously unseen categorical value (in a multi-way
-                #  test), so there is no branch to sort the instance to
-                if node.max_branches() == -1 and node.feature in x:
-                    # Create a new branch to the new categorical value
-                    leaf = self._new_leaf(parent=node)
-                    node.add_child(x[node.feature], leaf)
-                    self._n_active_leaves += 1
-                    node = leaf
-                # The split feature is missing in the instance. Hence, we pass the new example
-                # to the most traversed path in the current subtree
-                else:
-                    _, node = node.most_common_path()
-                    # And we keep trying to reach a leaf
-                    if isinstance(node, DTBranch):
-                        node = node.traverse(x, until_leaf=False)
-                # Once a leaf is reached, the traversal can stop
-                if isinstance(node, IOLINLeaf):
-                    break
-            # Learn from the sample
-            node.learn_one(x, y, sample_weight=sample_weight, tree=self)
-
-        if self._train_weight_seen_by_model % self.memory_estimate_period == 0:
-            self._estimate_model_size()
-
+                self.add_count = int(max(self.add_count * (1 - (self.red_add_count/100.0)), 
+                                      self.min_add_count))      
+        
+ 
         return self
 
     def predict_proba_one(self, x):
