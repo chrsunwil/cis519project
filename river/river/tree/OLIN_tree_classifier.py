@@ -10,6 +10,8 @@ from .split_criterion import (
 from .splitter import GaussianSplitter, Splitter
 
 import math
+import numpy as np
+import scipy
 
 class OLINTreeClassifier(IOLINTree, base.Classifier):
     """Hoeffding Tree or Very Fast Decision Tree classifier.
@@ -116,6 +118,8 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         max_add_count : int = 50,
         inc_add_count : int = 10,
         red_add_count : int = 10,
+        alpha : float = .001,
+        max_err : float = .6,
     ):
 
         super().__init__(
@@ -149,8 +153,15 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         
         self.cur_depth = 0
         
-        #EQ. 7 HOW DO I IMPLEMENT THIS?
-        self.window = 3 
+        max_err = max_err
+        
+        #EQ. 7
+        numerator = scipy.stats.chi2.ppf(alpha, 1)
+        H_p_err= -max_err*np.log2(max_err) - (1-max_err)*np.log2(1-max_err)
+
+        denomenator = 2 * np.log(2*(np.log2(2) - H_p_err - max_err*np.log2(1)))
+        self.window = max(int( numerator / denomenator),min_add_count)
+
         self.add_count = 4
         
         self.max_window = max_window
@@ -163,6 +174,11 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         
         self.batch = []
         self.used_split_features = set()
+        
+        self.alpha = alpha
+        
+        self.first_attr = None
+        self.first_attr_vals = set()
 
     @IOLINTree.split_criterion.setter
     def split_criterion(self, split_criterion):
@@ -188,7 +204,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         return split_criterion
 
     def _attempt_to_split(
-        self, leaf: IOLINLeaf, **kwargs
+        self, leaves, **kwargs
     ):
         """Attempt to split a leaf.
         Parameters
@@ -202,59 +218,107 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         kwargs
             Other parameters passed to the new branch.
         """
-        split_criterion = self._new_split_criterion()
-        best_split_suggestions = leaf.best_split_suggestions(split_criterion, self)
-        best_split_suggestions.sort()
-        for best_suggestion in best_split_suggestions:
-            if (best_suggestion.merit > 0 
-                and (best_suggestion.feature not in self.used_split_features)): #NEGATIVE MERIT SHOULDN'T SPLIT?
-
-#                 print(best_suggestion.feature)
+        leaves_split_suggestions = []
+        
+        for leaf in leaves:
+            split_criterion = self._new_split_criterion()
+            best_split_suggestions = leaf.best_split_suggestions(split_criterion, self)
+            leaves_split_suggestions.append(best_split_suggestions)
+            
+        attributes = []
+        
+        for split_suggestion in leaves_split_suggestions[0]:
+            attributes.append(split_suggestion.feature)
+            
+        temp_attributes = []
+        for attribute in attributes:
+            if (attribute not in self.used_split_features):
+                temp_attributes.append(attribute)
                 
-                split_decision = best_suggestion
-                if split_decision.feature is None:
-                    # Pre-pruning - null wins
-                    leaf.deactivate()
-                    self._n_inactive_leaves += 1
-                    self._n_active_leaves -= 1
-                else:
-                    branch = self._branch_selector(
-                        split_decision.numerical_feature, split_decision.multiway_split
-                    )
+        attributes = temp_attributes
+            
+        attributes_merits = [0] * len(attributes)
+        
+        for counter in range(len(attributes)):
+            for leaf_split_suggestion in leaves_split_suggestions:
+                for attribute_split in leaf_split_suggestion:
+                    if attribute_split.feature == attributes[counter]:
+                        # TODO remove any negative merit
+                        attributes_merits[counter] += max(attribute_split.merit,0)
+                        
+        sorted_attributes_merits = np.argsort(attributes_merits)[::-1]
+        
+        
+        best_attr_idx = sorted_attributes_merits[0]
+        
+        return_leaves = []
+        
+        for counter in range(len(leaves_split_suggestions)):
+            for suggestion in leaves_split_suggestions[counter]:
+                if (suggestion.merit > 0 
+                    and (suggestion.feature == attributes[best_attr_idx])): #NEGATIVE MERIT SHOULDN'T SPLIT?
 
-                    leaves = tuple(
-                        self._new_leaf(initial_stats, parent=leaf, parents=leaf.parents)
-                        for initial_stats in split_decision.children_stats
-                    )
-
-                    #Don't think this matters because I build whole network at one time
-    #                 self.cur_depth += 1 #THIS IS ASSUMING THAT ONLY LAST LAYERS CAN SPLIT
-
-        #                     print(self.cur_depth)
-
-                    new_split = split_decision.assemble(
-                        branch, leaf.stats, leaf.depth, *leaves, **kwargs
-                    )
-
-                    for new_leaf in leaves:
-                        new_leaf.parents = [(new_split, 0)]
-
-                    self._n_active_leaves -= 1
-                    self._n_active_leaves += len(leaves)
-
-                    parents = leaf.parents
-
-                    if parents is None:
-                        self._root = new_split
+    #                 print(best_suggestion.feature)
+                    best_suggestion = suggestion
+                    split_decision = best_suggestion
+#                     print(split_decision)
+                    if split_decision.feature is None:
+                        # Pre-pruning - null wins
+                        leaves[counter].deactivate()
+                        self._n_inactive_leaves += 1
+                        self._n_active_leaves -= 1
                     else:
-                        for parent, parent_branch in parents:
-                            parent.children[parent_branch] = new_split
+                        branch = self._branch_selector(
+                            split_decision.numerical_feature, split_decision.multiway_split
+                        )
 
-                    self.used_split_features.add(best_suggestion.feature)
+                        new_leaves = tuple(
+                            self._new_leaf(initial_stats, parent=leaves[counter], parents=leaves[counter].parents)
+                            for initial_stats in split_decision.children_stats
+                        )
 
-                    return leaves
-                return []
-        return []
+                        #Don't think this matters because I build whole network at one time
+        #                 self.cur_depth += 1 #THIS IS ASSUMING THAT ONLY LAST LAYERS CAN SPLIT
+
+            #                     print(self.cur_depth)
+
+                        new_split = split_decision.assemble(
+                            branch, leaves[counter].stats, leaves[counter].depth, *new_leaves, **kwargs
+                        )
+                
+#                         print(new_leaves[1].__repr__())
+
+#                         print("Add ", len(new_leaves), "new leaves for ", best_suggestion.feature)
+                        
+#                         print(new_split.repr_split)
+                        
+                        inc = 0
+                        for new_leaf in new_leaves:
+                            new_leaf.parents = [(new_split, inc)]
+                            inc += 1
+
+                        self._n_active_leaves -= 1
+                        self._n_active_leaves += len(new_leaves)
+
+                        parents = leaves[counter].parents
+                        
+#                         if parents is not None:
+#                             print(leaves[counter].parents[0][0].repr_split)
+
+                        if parents is None:
+                            self._root = new_split
+                        else:
+                            for parent, parent_branch in parents:
+                                parent.children[parent_branch] = new_split
+
+                        self.used_split_features.add(best_suggestion.feature)
+                        
+                        if self.first_attr is None:
+                            self.first_attr = best_suggestion.feature
+
+                        return_leaves += new_leaves
+
+        return return_leaves
 
     
     def build_IN(self, train_batch,*, sample_weight=1.0):
@@ -267,26 +331,32 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         
         self.used_split_features = set()
         
+        self.first_attr = None
+        self.first_attr_vals = set()
+        
         nodes_to_attempt_split = [self._root] #Reset so that we can learn the new layers
         
         
-        while len(nodes_to_attempt_split) > 0: #While there is a node in the last layer (or prev)
-            
-            cur_node = nodes_to_attempt_split.pop(0)
+        while len(nodes_to_attempt_split) > 0: #While there is a node in the last layer which got created
             
             self._train_weight_seen_by_model = 0
             
             #Teach the current node all of the data
             ##CREATE A BATCH UPDATE?
-            for x,y, in train_batch:
-                self.classes.add(y)
-                self._train_weight_seen_by_model += sample_weight
-                cur_node.learn_one(x,y, sample_weight=sample_weight, tree=self)
+            for cur_node in nodes_to_attempt_split:
+                self._train_weight_seen_by_model = 0
+                for x,y, in train_batch:
+                    self.classes.add(y)
+                    if (self.first_attr is not None):
+                        self.first_attr_vals.add(x[self.first_attr])
+                    self._train_weight_seen_by_model += sample_weight
+                    cur_node.learn_one(x,y, sample_weight=sample_weight, tree=self)
                 
             #attempt to split the current node. Get back the new children
-            new_leaves = self._attempt_to_split(cur_node)
+            new_leaves = self._attempt_to_split(nodes_to_attempt_split)
 #             print(self.used_split_features)
-            nodes_to_attempt_split += new_leaves
+            nodes_to_attempt_split = new_leaves
+#             print("Added new Layer")
                 
 #         print("Built an IN")
                 
@@ -327,33 +397,68 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
             #Build new IN model
             self.build_IN(train_batch = self.batch[:self.window],sample_weight=sample_weight)
             
-            
+            #Get our training and validation errors
             err = metrics.Accuracy()
             for x,y in self.batch[:self.window]:
                 err.update(y, self.predict_one(x))
             train_err = err.get()
+            
             err = metrics.Accuracy()
             for x,y in self.batch[self.window:]:
                 err.update(y, self.predict_one(x))
             validation_err = err.get()
             
-            #IS THIS THE SAME AS EXPECTED VALUE OF ERROR? EQ. 9
+            #EQ. 9
             var_diff = ((train_err * (1-train_err))/self.window 
                         + (validation_err * (1-validation_err))/self.add_count)
             
+            #EQ. 10
             max_diff = 2.326 * math.sqrt(var_diff)
             
             #detect concept drift
-            if (validation_err - train_err) < max_diff:
+            if (validation_err - train_err) < max_diff: #No concept drift
+                #New Validation and Train windows
                 self.add_count = int(min(self.add_count * (1 + (self.inc_add_count/100.0)), 
                                       self.max_add_count))
                 self.window = min(self.window+self.add_count,self.max_window)
+                
+                #Update the batch data to drop the training data
                 self.batch = self.batch[self.add_count:]
-            else:
+                
+            else: #Yes, concept drift
                 #recalculate size of window
-                #USE EQ. 8 -- I have literally no clue how to do this
+                #EQ. 8
+                NT_ip = len(self.first_attr_vals)
+                
+                H_train_err = -train_err*np.log2(train_err) - (1-train_err)*np.log2(1-train_err)
+#                 H_train_err= scipy.stats.entropy([train_err])
+                
+                ys = dict.fromkeys(self.classes, 0)
+                
+                for _, y in self.batch[:self.window]:
+                    ys[y] += 1
+                    
+                probs = np.array(list(ys.values())) / sum(ys.values())
+#                 print(probs)
+                H_A_i = scipy.stats.entropy(probs)
+                
+                
+                
+                numerator = scipy.stats.chi2.ppf(self.alpha, (NT_ip-1)*(len(self.classes)-1))
+                
+                denomenator = 2 * np.log(max(2*(H_A_i - H_train_err - train_err*np.log2(len(self.classes)-1)),1.001))
+#                 print(H_A_i)
+#                 print(H_train_err)
+#                 print(train_err*np.log2(len(self.classes)-1))
+# #                 print((NT_ip-1)*(len(self.classes)-1))
+#                 print(numerator)
+#                 print(denomenator)
+                
+                self.window = min(int(numerator / denomenator),self.max_window)
+#                 print(self.window)
                 
 
+                #Find the new validation window
                 self.add_count = int(max(self.add_count * (1 - (self.red_add_count/100.0)), 
                                       self.min_add_count))      
         

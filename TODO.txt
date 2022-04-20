@@ -31,7 +31,8 @@ Change Learn One Function (IOLINTreeClassifier.py)
         
         Create a new IN Tree --Done
         
-        QUESTIONS ABOUT EQUATIONS
+        EQ 8 -- Ends up being an inf value (because the entropy of the error 
+        is larger than the entropy of the target)
 
 Ryan --
 Implements IOLIN
