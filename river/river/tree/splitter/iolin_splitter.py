@@ -3,8 +3,8 @@ from collections import Counter, defaultdict
 
 import scipy
 
-from .base import Splitter
 from ..utils import BranchFactory
+from .base import Splitter
 
 
 class IOLINSplitter(Splitter):
@@ -54,11 +54,11 @@ class IOLINSplitter(Splitter):
         return 0.0
 
     def best_evaluated_split_suggestion(
-            self,
-            criterion,
-            pre_split_dist,
-            att_idx,
-            binary_only,
+        self,
+        criterion,
+        pre_split_dist,
+        att_idx,
+        binary_only,
     ):
         current_best_option = BranchFactory()
 
@@ -186,16 +186,16 @@ class IOLINSplitter(Splitter):
         return current_best_option, best_node
 
     def _search_for_best_split_options(
-            self,
-            current_node,
-            current_best_option,
-            actual_parent_left,
-            parent_left,
-            parent_right,
-            left_child,
-            criterion,
-            pre_split_dist,
-            att_idx,
+        self,
+        current_node,
+        current_best_option,
+        actual_parent_left,
+        parent_left,
+        parent_right,
+        left_child,
+        criterion,
+        pre_split_dist,
+        att_idx,
     ):
         current_best_option = BranchFactory()
 
@@ -226,7 +226,7 @@ class IOLINSplitter(Splitter):
 
             if mutual_info > 0:
                 likelihood_ratio = (
-                        2 * math.log(2) * int(self.total_weight) * mutual_info
+                    2 * math.log(2) * int(self.total_weight) * mutual_info
                 )
                 num_attr_values = len(current_best_option.children_stats)
                 deg_freedom = num_attr_values - 1
@@ -251,11 +251,10 @@ class IOLINSplitter(Splitter):
             if left_split.merit > 0:
                 # current_best_option.merit += left_split.merit
                 current_best_option.children_stats = (
-                        left_split.children_stats + current_best_option.children_stats[
-                                                    1:]
+                    left_split.children_stats + current_best_option.children_stats[1:]
                 )
                 current_best_option.split_info = (
-                        left_split.split_info + current_best_option.split_info
+                    left_split.split_info + current_best_option.split_info
                 )
         if len(current_best_option.children_stats[1]) > 1:
             right_split = self._search_for_best_split_options(
@@ -272,11 +271,10 @@ class IOLINSplitter(Splitter):
             if right_split.merit > 0:
                 # current_best_option.merit += right_split.merit
                 current_best_option.children_stats = (
-                        current_best_option.children_stats[
-                        :-1] + right_split.children_stats
+                    current_best_option.children_stats[:-1] + right_split.children_stats
                 )
                 current_best_option.split_info = (
-                        current_best_option.split_info + right_split.split_info
+                    current_best_option.split_info + right_split.split_info
                 )
         return current_best_option
 

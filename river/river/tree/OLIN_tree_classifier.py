@@ -4,14 +4,12 @@ import numpy as np
 import scipy
 
 from river import base, metrics
+
 from .IOLIN_tree import IOLINTree
-from .nodes.IOLIN_nodes import IOLINLeafMajorityClass
 from .nodes.branch import DTBranch
+from .nodes.IOLIN_nodes import IOLINLeafMajorityClass
 from .split_criterion import IOLINInfoGainSplitCriterion
-from .splitter import (
-    IOLINSplitter,
-    Splitter,
-)
+from .splitter import IOLINSplitter, Splitter
 
 
 class OLINTreeClassifier(IOLINTree, base.Classifier):
@@ -491,7 +489,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                 if NT_ip == 0:
                     numerator = scipy.stats.chi2.ppf(1 - self.alpha, 1)
                     H_p_err = -self.max_err * np.log2(self.max_err) - (
-                            1 - self.max_err
+                        1 - self.max_err
                     ) * np.log2(1 - self.max_err)
 
                     denomenator = 2 * np.log(
@@ -504,8 +502,8 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
                     # math or np might be more performant
                     H_train_err = -(
-                            scipy.special.xlogy(train_err, train_err)
-                            + scipy.special.xlog1py(1 - train_err, -train_err)
+                        scipy.special.xlogy(train_err, train_err)
+                        + scipy.special.xlog1py(1 - train_err, -train_err)
                     ) / np.log(2)
                     #                 H_train_err= scipy.stats.entropy([train_err])
 
