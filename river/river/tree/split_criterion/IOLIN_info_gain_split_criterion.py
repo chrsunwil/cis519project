@@ -24,12 +24,14 @@ class IOLINInfoGainSplitCriterion(SplitCriterion):
         self.alpha = alpha
         self.min_branch_frac_option = min_branch_frac_option
 
-    def merit_of_split(self, pre_split_dist, post_split_dist, node_weight=1.0, tree_weight=1.0):
+    def merit_of_split(
+        self, pre_split_dist, post_split_dist, node_weight=1.0, tree_weight=1.0
+    ):
         if (
-                self.num_subsets_greater_than_frac(
-                    post_split_dist, self.min_branch_frac_option
-                )
-                < 2
+            self.num_subsets_greater_than_frac(
+                post_split_dist, self.min_branch_frac_option
+            )
+            < 2
         ):
             return -math.inf
 

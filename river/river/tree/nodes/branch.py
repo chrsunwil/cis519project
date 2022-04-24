@@ -78,6 +78,7 @@ class NumericBinaryBranch(DTBranch):
     def repr_split(self):
         return f"{self.feature} ≤ {self.threshold}"
 
+
 class IOLINNumericMultiwayBranch(DTBranch):
     def __init__(self, stats, feature, thresholds, depth, *children, **attributes):
         super().__init__(stats, *children, **attributes)

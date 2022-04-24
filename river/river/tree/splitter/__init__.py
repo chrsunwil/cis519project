@@ -19,10 +19,10 @@ from .ebst_splitter import EBSTSplitter
 from .exhaustive_splitter import ExhaustiveSplitter
 from .gaussian_splitter import GaussianSplitter
 from .histogram_splitter import HistogramSplitter
+from .iolin_splitter import IOLINSplitter
 from .qo_splitter import QOSplitter
 from .sgt_quantizer import DynamicQuantizer, StaticQuantizer
 from .tebst_splitter import TEBSTSplitter
-from .iolin_splitter import IOLINSplitter
 
 __all__ = [
     "DynamicQuantizer",

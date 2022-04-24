@@ -4,9 +4,7 @@ from .IOLIN_tree import IOLINTree
 from .nodes.branch import DTBranch
 from .nodes.IOLIN_nodes import IOLINLeafMajorityClass
 from .nodes.leaf import IOLINLeaf
-from .split_criterion import (
-    IOLINInfoGainSplitCriterion
-)
+from .split_criterion import IOLINInfoGainSplitCriterion
 from .splitter import GaussianSplitter, Splitter
 
 
@@ -156,7 +154,7 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
             depth = 0
         else:
             depth = parent.depth + 1
-           
+
         return IOLINLeafMajorityClass(initial_stats, depth, self.splitter)
 
     def _new_split_criterion(self):
