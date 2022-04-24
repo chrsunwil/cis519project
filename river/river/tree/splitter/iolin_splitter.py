@@ -251,7 +251,8 @@ class IOLINSplitter(Splitter):
             if left_split.merit > 0:
                 # current_best_option.merit += left_split.merit
                 current_best_option.children_stats = (
-                        left_split.children_stats + current_best_option.children_stats[1:]
+                        left_split.children_stats + current_best_option.children_stats[
+                                                    1:]
                 )
                 current_best_option.split_info = (
                         left_split.split_info + current_best_option.split_info
@@ -271,7 +272,8 @@ class IOLINSplitter(Splitter):
             if right_split.merit > 0:
                 # current_best_option.merit += right_split.merit
                 current_best_option.children_stats = (
-                        current_best_option.children_stats[:-1] + right_split.children_stats
+                        current_best_option.children_stats[
+                        :-1] + right_split.children_stats
                 )
                 current_best_option.split_info = (
                         current_best_option.split_info + right_split.split_info
