@@ -2,11 +2,9 @@ from river import base
 
 from .IOLIN_tree import IOLINTree
 from .nodes.branch import DTBranch
-from .nodes.IOLIN_nodes import LeafMajorityClass
+from .nodes.IOLIN_nodes import IOLINLeafMajorityClass
 from .nodes.leaf import IOLINLeaf
-from .split_criterion import (
-    IOLINInfoGainSplitCriterion
-)
+from .split_criterion import IOLINInfoGainSplitCriterion
 from .splitter import GaussianSplitter, Splitter
 
 
@@ -125,7 +123,7 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
         self.split_criterion = IOLINInfoGainSplitCriterion
         self.split_confidence = split_confidence
         self.tie_threshold = tie_threshold
-        self.leaf_prediction = LeafMajorityClass
+        self.leaf_prediction = IOLINLeafMajorityClass
         self.nb_threshold = nb_threshold
         self.nominal_attributes = nominal_attributes
 
@@ -147,7 +145,7 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
 
     @IOLINTree.leaf_prediction.setter
     def leaf_prediction(self, leaf_prediction):
-        self._leaf_prediction = LeafMajorityClass
+        self._leaf_prediction = IOLINLeafMajorityClass
 
     def _new_leaf(self, initial_stats=None, parent=None):
         if initial_stats is None:
@@ -156,8 +154,8 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
             depth = 0
         else:
             depth = parent.depth + 1
-           
-        return LeafMajorityClass(initial_stats, depth, self.splitter)
+
+        return IOLINLeafMajorityClass(initial_stats, depth, self.splitter)
 
     def _new_split_criterion(self):
         split_criterion = IOLINInfoGainSplitCriterion()

@@ -188,7 +188,8 @@ class HTLeaf(Leaf, abc.ABC):
             given class than the other classes.
 
         """
-        
+
+
 class IOLINLeaf(Leaf, abc.ABC):
     """Base leaf class to be used in Hoeffding Trees.
 
@@ -205,11 +206,11 @@ class IOLINLeaf(Leaf, abc.ABC):
         Other parameters passed to the learning node.
     """
 
-    def __init__(self, stats, depth, splitter, parents,**kwargs):
+    def __init__(self, stats, depth, splitter, parents, **kwargs):
         super().__init__(**kwargs)
         self.stats = stats
         self.depth = depth
-        
+
         self.parents = parents
 
         self.splitter = splitter
@@ -313,6 +314,9 @@ class IOLINLeaf(Leaf, abc.ABC):
             null_split = BranchFactory()
             best_suggestions.append(null_split)
         for att_id, splitter in self.splitters.items():
+            splitter.set_tree_weight_and_alpha(
+                tree._train_weight_seen_by_model, tree.alpha
+            )
             best_suggestion = splitter.best_evaluated_split_suggestion(
                 criterion, pre_split_dist, att_id, tree.binary_split
             )
@@ -372,4 +376,3 @@ class IOLINLeaf(Leaf, abc.ABC):
             given class than the other classes.
 
         """
-

@@ -1,5 +1,7 @@
 import math
 
+import scipy
+
 from .base import SplitCriterion
 
 
@@ -16,12 +18,15 @@ class IOLINInfoGainSplitCriterion(SplitCriterion):
 
     """
 
-    def __init__(self, min_branch_frac_option=0.01):
+    def __init__(self, min_branch_frac_option=0.01, alpha=0.001):
         super().__init__()
         # Minimum fraction of weight required down at least two branches.
+        self.alpha = alpha
         self.min_branch_frac_option = min_branch_frac_option
 
-    def merit_of_split(self, pre_split_dist, post_split_dist):
+    def merit_of_split(
+        self, pre_split_dist, post_split_dist, node_weight=1.0, tree_weight=1.0
+    ):
         if (
             self.num_subsets_greater_than_frac(
                 post_split_dist, self.min_branch_frac_option
@@ -29,9 +34,24 @@ class IOLINInfoGainSplitCriterion(SplitCriterion):
             < 2
         ):
             return -math.inf
-        return self.compute_entropy(pre_split_dist) - self.compute_entropy(
+
+        mutual_info = self.compute_entropy(pre_split_dist) - self.compute_entropy(
             post_split_dist
         )
+
+        # p_node = (node_weight / tree_weight)
+        #
+        # mutual_info *= p_node
+        #
+        # if mutual_info > 0:
+        #     likelihood_ratio = 2 * math.log(2) * int(node_weight) * mutual_info
+        #     num_attr_values = len(post_split_dist)
+        #     deg_freedom = (num_attr_values - 1)
+        #     critical_value = scipy.stats.chi2.ppf(1 - self.alpha, deg_freedom)
+        #     if likelihood_ratio < critical_value:
+        #         mutual_info = -math.inf
+
+        return mutual_info
 
     @staticmethod
     def range_of_merit(pre_split_dist):

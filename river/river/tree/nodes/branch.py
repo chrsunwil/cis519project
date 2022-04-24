@@ -79,6 +79,44 @@ class NumericBinaryBranch(DTBranch):
         return f"{self.feature} ≤ {self.threshold}"
 
 
+class IOLINNumericMultiwayBranch(DTBranch):
+    def __init__(self, stats, feature, thresholds, depth, *children, **attributes):
+        super().__init__(stats, *children, **attributes)
+        self.feature = feature
+        self.thresholds = thresholds
+        self.depth = depth
+
+    def branch_no(self, x):
+        for i, threshold in enumerate(self.thresholds):
+            if x[self.feature] <= threshold:
+                return i
+        return len(self.thresholds)
+
+    def max_branches(self):
+        return -1
+
+    def most_common_path(self):
+        # Get the most traversed path
+        pos = max(
+            range(len(self.children)), key=lambda i: self.children[i].total_weight
+        )
+
+        return pos, self.children[pos]
+
+    def repr_branch(self, index: int, shorten=False):
+        try:
+            if shorten:
+                return f"≤ {round(self.thresholds[index], 4)}"
+            else:
+                return f"≤ {self.thresholds[index]}"
+        except IndexError:
+            return f"> {self.thresholds[-1]}"
+
+    @property
+    def repr_split(self):
+        return f"{self.feature} in {self.thresholds}"
+
+
 class NominalBinaryBranch(DTBranch):
     def __init__(self, stats, feature, value, depth, left, right, **attributes):
         super().__init__(stats, left, right, **attributes)
@@ -114,7 +152,7 @@ class NominalBinaryBranch(DTBranch):
 
     @property
     def repr_split(self):
-        return f"{self.feature} {{=, ≠}} {self.value}"
+        return f"{self.feature} {{in}} {self.value}"
 
 
 class NumericMultiwayBranch(DTBranch):

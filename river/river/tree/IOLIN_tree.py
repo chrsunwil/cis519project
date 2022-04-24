@@ -13,6 +13,7 @@ from river.utils.skmultiflow_utils import (
 
 from .nodes.branch import (
     DTBranch,
+    IOLINNumericMultiwayBranch,
     NominalBinaryBranch,
     NominalMultiwayBranch,
     NumericBinaryBranch,
@@ -191,12 +192,12 @@ class IOLINTree(ABC):
         self, numerical_feature=True, multiway_split=False
     ) -> typing.Type[DTBranch]:
         """Create a new split node."""
-        
+
         if numerical_feature:
             if not multiway_split:
                 return NumericBinaryBranch
             else:
-                return NumericMultiwayBranch
+                return IOLINNumericMultiwayBranch
         else:
             if not multiway_split:
                 return NominalBinaryBranch
@@ -205,7 +206,9 @@ class IOLINTree(ABC):
 
     @abstractmethod
     def _new_leaf(
-        self, initial_stats: dict = None, parent: typing.Union[IOLINLeaf, DTBranch] = None
+        self,
+        initial_stats: dict = None,
+        parent: typing.Union[IOLINLeaf, DTBranch] = None,
     ) -> IOLINLeaf:
         """Create a new learning node.
 
@@ -460,7 +463,7 @@ class IOLINTree(ABC):
                 continue
 
             if isinstance(child, DTBranch):
-                text = f"{child.feature}"  # noqa
+                text = f"{child.feature}\nsamples: {int(child.total_weight)}\n{str(child)}"  # noqa
             else:
                 text = f"{repr(child)}\nsamples: {int(child.total_weight)}"
 
