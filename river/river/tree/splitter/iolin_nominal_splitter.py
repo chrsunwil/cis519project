@@ -86,14 +86,16 @@ class IOLINNominalSplitter(Splitter):
 
         mutual_info = current_best_option.merit
 
-        p_node = (self._total_weight_observed / self.tree_weight)
+        p_node = self._total_weight_observed / self.tree_weight
 
         mutual_info *= p_node
 
         if mutual_info > 0:
-            likelihood_ratio = 2 * math.log(2) * int(self._total_weight_observed) * mutual_info
+            likelihood_ratio = (
+                2 * math.log(2) * int(self._total_weight_observed) * mutual_info
+            )
             num_attr_values = len(current_best_option.children_stats)
-            deg_freedom = (num_attr_values - 1)
+            deg_freedom = num_attr_values - 1
             critical_value = scipy.stats.chi2.ppf(1 - self.alpha, deg_freedom)
             if likelihood_ratio < critical_value:
                 current_best_option.merit = -math.inf
