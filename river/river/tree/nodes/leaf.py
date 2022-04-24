@@ -1,13 +1,9 @@
 import abc
 import copy
-import math
 import numbers
 import typing
 
-import scipy
-
 from ..base import Leaf
-from ..splitter import IOLINSplitter
 from ..utils import BranchFactory
 
 
@@ -103,7 +99,7 @@ class HTLeaf(Leaf, abc.ABC):
                 splitter = self.splitters[att_id]
             except KeyError:
                 if (
-                    nominal_attributes is not None and att_id in nominal_attributes
+                        nominal_attributes is not None and att_id in nominal_attributes
                 ) or not isinstance(att_val, numbers.Number):
                     splitter = self.new_nominal_splitter()
                 else:
@@ -288,7 +284,7 @@ class IOLINLeaf(Leaf, abc.ABC):
                 splitter = self.splitters[att_id]
             except KeyError:
                 if (
-                    nominal_attributes is not None and att_id in nominal_attributes
+                        nominal_attributes is not None and att_id in nominal_attributes
                 ) or not isinstance(att_val, numbers.Number):
                     splitter = self.new_nominal_splitter()
                 else:

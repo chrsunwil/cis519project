@@ -4,16 +4,11 @@ import numpy as np
 import scipy
 
 from river import base, metrics
-
 from .IOLIN_tree import IOLINTree
-from .nodes.branch import DTBranch
 from .nodes.IOLIN_nodes import IOLINLeafMajorityClass
-from .nodes.leaf import IOLINLeaf
+from .nodes.branch import DTBranch
 from .split_criterion import IOLINInfoGainSplitCriterion
 from .splitter import (
-    ExhaustiveSplitter,
-    GaussianSplitter,
-    HistogramSplitter,
     IOLINSplitter,
     Splitter,
 )
@@ -109,23 +104,23 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         grace_period: int = 200,
         max_depth: int = None,
         split_confidence: float = 1e-7,
-        tie_threshold: float = 0.05,
-        nb_threshold: int = 0,
-        nominal_attributes: list = None,
-        splitter: Splitter = None,
-        binary_split: bool = False,
-        max_size: int = 100,
-        memory_estimate_period: int = 1000000,
-        stop_mem_management: bool = False,
-        remove_poor_attrs: bool = False,
-        merit_preprune: bool = True,
-        max_window: int = 1000,
-        min_add_count: int = 10,
-        max_add_count: int = 100,
-        inc_add_count: int = 10,
-        red_add_count: int = 10,
-        alpha: float = 0.001,
-        max_err: float = 0.6,
+            tie_threshold: float = 0.05,
+            nb_threshold: int = 0,
+            nominal_attributes: list = None,
+            splitter: Splitter = None,
+            binary_split: bool = False,
+            max_size: int = 100,
+            memory_estimate_period: int = 1000000,
+            stop_mem_management: bool = False,
+            remove_poor_attrs: bool = False,
+            merit_preprune: bool = True,
+            max_window: int = 1000,
+            min_add_count: int = 10,
+            max_add_count: int = 100,
+            inc_add_count: int = 10,
+            red_add_count: int = 10,
+            alpha: float = 0.001,
+            max_err: float = 0.6,
     ):
 
         super().__init__(
@@ -266,7 +261,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
             for suggestion in leaves_split_suggestions[counter]:
 
                 if suggestion.merit > 0 and (
-                    suggestion.feature == attributes[best_attr_idx]
+                        suggestion.feature == attributes[best_attr_idx]
                 ):  # NEGATIVE MERIT SHOULDN'T SPLIT?
 
                     #                 print(best_suggestion.feature)
@@ -366,7 +361,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         #     self._root.learn_one(x, y, sample_weight=sample_weight, tree=self)
 
         while (
-            len(nodes_to_attempt_split) > 0
+                len(nodes_to_attempt_split) > 0
         ):  # While there is a node in the last layer which got created
 
             self._train_weight_seen_by_model = 0
@@ -389,8 +384,8 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
             for cur_node in nodes_to_attempt_split:
                 self._train_weight_seen_by_model = 0
                 for (
-                    x,
-                    y,
+                        x,
+                        y,
                 ) in train_batch:
                     self.classes.add(y)
                     if self.first_attr is not None:
@@ -457,13 +452,13 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
             train_err = err.get()
 
             err = metrics.Accuracy()
-            for x, y in self.batch[self.window :]:
+            for x, y in self.batch[self.window:]:
                 err.update(y, self.predict_one(x))
             validation_err = err.get()
 
             # EQ. 9
             var_diff = (train_err * (1 - train_err)) / self.window + (
-                validation_err * (1 - validation_err)
+                    validation_err * (1 - validation_err)
             ) / self.add_count
 
             # EQ. 10
@@ -479,7 +474,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                     )
                 )
                 self.window = min(self.window + self.add_count, self.max_window)
-                self.batch = self.batch[-self.window :]
+                self.batch = self.batch[-self.window:]
 
             else:  # Yes, concept drift
                 # recalculate size of window
@@ -496,7 +491,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                 if NT_ip == 0:
                     numerator = scipy.stats.chi2.ppf(1 - self.alpha, 1)
                     H_p_err = -self.max_err * np.log2(self.max_err) - (
-                        1 - self.max_err
+                            1 - self.max_err
                     ) * np.log2(1 - self.max_err)
 
                     denomenator = 2 * np.log(
@@ -509,8 +504,8 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
                     # math or np might be more performant
                     H_train_err = -(
-                        scipy.special.xlogy(train_err, train_err)
-                        + scipy.special.xlog1py(1 - train_err, -train_err)
+                            scipy.special.xlogy(train_err, train_err)
+                            + scipy.special.xlog1py(1 - train_err, -train_err)
                     ) / np.log(2)
                     #                 H_train_err= scipy.stats.entropy([train_err])
 
@@ -533,10 +528,10 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                         max(
                             2
                             * (
-                                H_A_i
-                                - H_train_err
-                                - scipy.special.xlogy(train_err, len(self.classes) - 1)
-                                / np.log(2)
+                                    H_A_i
+                                    - H_train_err
+                                    - scipy.special.xlogy(train_err, len(self.classes) - 1)
+                                    / np.log(2)
                             ),
                             1.001,
                         )
@@ -564,7 +559,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                 )
 
                 # Update the batch data to drop the training data
-                self.batch = self.batch[-self.window :]
+                self.batch = self.batch[-self.window:]
         # print(self.window)
 
         return self

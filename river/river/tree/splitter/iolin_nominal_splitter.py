@@ -4,8 +4,8 @@ import math
 
 import scipy
 
-from ..utils import BranchFactory
 from .base import Splitter
+from ..utils import BranchFactory
 
 
 class IOLINNominalSplitter(Splitter):
@@ -92,7 +92,7 @@ class IOLINNominalSplitter(Splitter):
 
         if mutual_info > 0:
             likelihood_ratio = (
-                2 * math.log(2) * int(self._total_weight_observed) * mutual_info
+                    2 * math.log(2) * int(self._total_weight_observed) * mutual_info
             )
             num_attr_values = len(current_best_option.children_stats)
             deg_freedom = num_attr_values - 1
