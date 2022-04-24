@@ -16,7 +16,7 @@ from .nodes.branch import (
     NominalBinaryBranch,
     NominalMultiwayBranch,
     NumericBinaryBranch,
-    NumericMultiwayBranch,
+    NumericMultiwayBranch, IOLINNumericMultiwayBranch,
 )
 from .nodes.leaf import IOLINLeaf
 
@@ -196,7 +196,7 @@ class IOLINTree(ABC):
             if not multiway_split:
                 return NumericBinaryBranch
             else:
-                return NumericMultiwayBranch
+                return IOLINNumericMultiwayBranch
         else:
             if not multiway_split:
                 return NominalBinaryBranch
@@ -460,7 +460,7 @@ class IOLINTree(ABC):
                 continue
 
             if isinstance(child, DTBranch):
-                text = f"{child.feature}"  # noqa
+                text = f"{child.feature}\nsamples: {int(child.total_weight)}\n{str(child)}"  # noqa
             else:
                 text = f"{repr(child)}\nsamples: {int(child.total_weight)}"
 

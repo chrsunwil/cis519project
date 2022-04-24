@@ -2,12 +2,12 @@ from river import base
 from river import metrics
 from .IOLIN_tree import IOLINTree
 from .nodes.branch import DTBranch
-from .nodes.IOLIN_nodes import LeafMajorityClass
+from .nodes.IOLIN_nodes import IOLINLeafMajorityClass
 from .nodes.leaf import IOLINLeaf
 from .split_criterion import (
     IOLINInfoGainSplitCriterion
 )
-from .splitter import GaussianSplitter, Splitter
+from .splitter import GaussianSplitter, Splitter, ExhaustiveSplitter, HistogramSplitter, IOLINSplitter
 
 import math
 import numpy as np
@@ -113,9 +113,9 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         stop_mem_management: bool = False,
         remove_poor_attrs: bool = False,
         merit_preprune: bool = True,
-        max_window : int = 60,
-        min_add_count : int = 4,
-        max_add_count : int = 50,
+        max_window : int = 1000,
+        min_add_count : int = 10,
+        max_add_count : int = 100,
         inc_add_count : int = 10,
         red_add_count : int = 10,
         alpha : float = .001,
@@ -135,12 +135,13 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         self.split_criterion = IOLINInfoGainSplitCriterion
         self.split_confidence = split_confidence
         self.tie_threshold = tie_threshold
-        self.leaf_prediction = LeafMajorityClass
+        self.leaf_prediction = IOLINLeafMajorityClass
         self.nb_threshold = nb_threshold
         self.nominal_attributes = nominal_attributes
 
         if splitter is None:
-            self.splitter = GaussianSplitter()
+            # self.splitter = GaussianSplitter()
+            self.splitter = IOLINSplitter()
         else:
             if not splitter.is_target_class:
                 raise ValueError(
@@ -153,7 +154,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         
         self.cur_depth = 0
         
-        max_err = max_err
+        self.max_err = max_err
         
         #EQ. 7
         numerator = scipy.stats.chi2.ppf(alpha, 1)
@@ -186,7 +187,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
     @IOLINTree.leaf_prediction.setter
     def leaf_prediction(self, leaf_prediction):
-        self._leaf_prediction = LeafMajorityClass
+        self._leaf_prediction = IOLINLeafMajorityClass
 
     def _new_leaf(self, initial_stats=None, parent=None, parents=None):
         if initial_stats is None:
@@ -196,10 +197,10 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         else:
             depth = parent.depth + 1
            
-        return LeafMajorityClass(initial_stats, depth, self.splitter, parents)
+        return IOLINLeafMajorityClass(initial_stats, depth, self.splitter, parents)
 
     def _new_split_criterion(self):
-        split_criterion = IOLINInfoGainSplitCriterion()
+        split_criterion = IOLINInfoGainSplitCriterion(alpha=self.alpha)
 
         return split_criterion
 
@@ -223,6 +224,8 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         for leaf in leaves:
             split_criterion = self._new_split_criterion()
             best_split_suggestions = leaf.best_split_suggestions(split_criterion, self)
+            # if len(leaves) == 3 and len(leaf.stats) > 1:
+            #     print(leaf)
             leaves_split_suggestions.append(best_split_suggestions)
             
         attributes = []
@@ -252,16 +255,22 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         best_attr_idx = sorted_attributes_merits[0]
         
         return_leaves = []
-        
+        # print(len(leaves_split_suggestions[2]))
+        # print(attributes)
+        # print(attributes_merits)
+
         for counter in range(len(leaves_split_suggestions)):
             for suggestion in leaves_split_suggestions[counter]:
+
                 if (suggestion.merit > 0 
                     and (suggestion.feature == attributes[best_attr_idx])): #NEGATIVE MERIT SHOULDN'T SPLIT?
 
     #                 print(best_suggestion.feature)
                     best_suggestion = suggestion
                     split_decision = best_suggestion
-#                     print(split_decision)
+
+
+                    # print(split_decision)
                     if split_decision.feature is None:
                         # Pre-pruning - null wins
                         leaves[counter].deactivate()
@@ -273,7 +282,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                         )
 
                         new_leaves = tuple(
-                            self._new_leaf(initial_stats, parent=leaves[counter], parents=leaves[counter].parents)
+                            self._new_leaf({}, parent=leaves[counter], parents=leaves[counter].parents)
                             for initial_stats in split_decision.children_stats
                         )
 
@@ -304,7 +313,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                         
 #                         if parents is not None:
 #                             print(leaves[counter].parents[0][0].repr_split)
-
+#                         print(split_decision.feature, split_decision.children_stats, parents[0][0].repr_split if parents is not None else None)
                         if parents is None:
                             self._root = new_split
                         else:
@@ -315,9 +324,9 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                         
                         if self.first_attr is None:
                             self.first_attr = best_suggestion.feature
-
                         return_leaves += new_leaves
-
+                        # print(len(return_leaves))
+        # print(f'for real: {len(return_leaves)}')
         return return_leaves
 
     
@@ -335,14 +344,36 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         self.first_attr_vals = set()
         
         nodes_to_attempt_split = [self._root] #Reset so that we can learn the new layers
-        
+        # self._train_weight_seen_by_model = 0
+        # for x, y, in train_batch:
+        #     self.classes.add(y)
+        #     if (self.first_attr is not None):
+        #         self.first_attr_vals.add(x[self.first_attr])
+        #     self._train_weight_seen_by_model += sample_weight
+        #     self._root.learn_one(x, y, sample_weight=sample_weight, tree=self)
         
         while len(nodes_to_attempt_split) > 0: #While there is a node in the last layer which got created
             
+
             self._train_weight_seen_by_model = 0
-            
+
             #Teach the current node all of the data
             ##CREATE A BATCH UPDATE?
+
+            # for x, y, in train_batch:
+            #     if isinstance(self._root, DTBranch):
+            #         path = iter(self._root.walk(x, until_leaf=False))
+            #         while True:
+            #             aux = next(path, None)
+            #             if aux is None:
+            #                 break
+            #             p_node = node
+            #             node = aux
+            #     else:
+            #         node = self._root
+
+
+
             for cur_node in nodes_to_attempt_split:
                 self._train_weight_seen_by_model = 0
                 for x,y, in train_batch:
@@ -350,15 +381,21 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                     if (self.first_attr is not None):
                         self.first_attr_vals.add(x[self.first_attr])
                     self._train_weight_seen_by_model += sample_weight
-                    cur_node.learn_one(x,y, sample_weight=sample_weight, tree=self)
-                
+                    if cur_node in iter(self._root.walk(x, until_leaf=False)):
+                        cur_node.learn_one(x,y, sample_weight=sample_weight, tree=self)
+
             #attempt to split the current node. Get back the new children
             new_leaves = self._attempt_to_split(nodes_to_attempt_split)
+            # print(len(new_leaves))
 #             print(self.used_split_features)
+
             nodes_to_attempt_split = new_leaves
+            # print(nodes_to_attempt_split)
+
 #             print("Added new Layer")
                 
 #         print("Built an IN")
+#         print(self._root.children[2].stats if isinstance(self._root, DTBranch) else None)
                 
 
     def learn_one(self, x, y, *, sample_weight=1.0):
@@ -391,9 +428,9 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         
         #Add to the batch
         self.batch.append((x,y))
-        
+
         if len(self.batch) >= self.window + self.add_count:
-            
+
             #Build new IN model
             self.build_IN(train_batch = self.batch[:self.window],sample_weight=sample_weight)
             
@@ -416,53 +453,81 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
             max_diff = 2.326 * math.sqrt(var_diff)
             
             #detect concept drift
-            if (validation_err - train_err) < max_diff: #No concept drift
+            if (validation_err - train_err) <= max_diff: #No concept drift
                 #New Validation and Train windows
                 self.add_count = int(min(self.add_count * (1 + (self.inc_add_count/100.0)), 
                                       self.max_add_count))
                 self.window = min(self.window+self.add_count,self.max_window)
-                
-                #Update the batch data to drop the training data
-                self.batch = self.batch[self.add_count:]
+                self.batch = self.batch[-self.window:]
+
                 
             else: #Yes, concept drift
                 #recalculate size of window
                 #EQ. 8
-                NT_ip = len(self.first_attr_vals)
-                
-                H_train_err = -train_err*np.log2(train_err) - (1-train_err)*np.log2(1-train_err)
-#                 H_train_err= scipy.stats.entropy([train_err])
-                
-                ys = dict.fromkeys(self.classes, 0)
-                
-                for _, y in self.batch[:self.window]:
-                    ys[y] += 1
-                    
-                probs = np.array(list(ys.values())) / sum(ys.values())
-#                 print(probs)
-                H_A_i = scipy.stats.entropy(probs)
-                
-                
-                
-                numerator = scipy.stats.chi2.ppf(self.alpha, (NT_ip-1)*(len(self.classes)-1))
-                
-                denomenator = 2 * np.log(max(2*(H_A_i - H_train_err - train_err*np.log2(len(self.classes)-1)),1.001))
-#                 print(H_A_i)
-#                 print(H_train_err)
-#                 print(train_err*np.log2(len(self.classes)-1))
-# #                 print((NT_ip-1)*(len(self.classes)-1))
-#                 print(numerator)
-#                 print(denomenator)
-                
-                self.window = min(int(numerator / denomenator),self.max_window)
-#                 print(self.window)
-                
+                # print(train_err)
+                # print(validation_err)
+                # print(max_diff)
+                if (isinstance(self._root, DTBranch)):
+                    NT_ip = len(self._root.children)
+                else:
+                    NT_ip = 0
 
+                # added a case for concept drift when the tree is a stump
+                if NT_ip == 0:
+                    numerator = scipy.stats.chi2.ppf(1-self.alpha, 1)
+                    H_p_err = -self.max_err * np.log2(self.max_err) - (1 - self.max_err) * np.log2(1 - self.max_err)
+
+                    denomenator = 2 * np.log(2 * (np.log2(2) - H_p_err - self.max_err * np.log2(1)))
+                    self.window = max(int(numerator / denomenator), self.min_add_count)
+                else:
+                    # # log2(0) handling
+                    # if train_err == 0:
+
+                    # math or np might be more performant
+                    H_train_err = -(scipy.special.xlogy(train_err, train_err)
+                                    + scipy.special.xlog1py(1 - train_err, -train_err))/np.log(2)
+    #                 H_train_err= scipy.stats.entropy([train_err])
+
+                    ys = dict.fromkeys(self.classes, 0)
+
+                    for _, y in self.batch[:self.window]:
+                        ys[y] += 1
+
+                    probs = np.array(list(ys.values())) / sum(ys.values())
+    #                 print(probs)
+                    H_A_i = scipy.stats.entropy(probs)
+
+
+
+                    numerator = scipy.stats.chi2.ppf(1-self.alpha, (NT_ip-1)*(len(self.classes)-1))
+                    # print(self.alpha, self.summary, self.classes)
+                    # print(numerator)
+
+
+                    denomenator = 2 * np.log(max(2*(H_A_i
+                                                    - H_train_err
+                                                    - scipy.special.xlogy(train_err, len(self.classes)-1)/np.log(2)),
+                                                 1.001))
+    #                 print(H_A_i)
+    #                 print(H_train_err)
+    #                 print(train_err*np.log2(len(self.classes)-1))
+    # #                 print((NT_ip-1)*(len(self.classes)-1))
+    #                 print(numerator)
+    #                 print(denomenator)
+
+                    # print(denomenator)
+                    self.window = max(self.min_add_count, min(int(numerator / denomenator),self.max_window))
+
+
+                #
                 #Find the new validation window
                 self.add_count = int(max(self.add_count * (1 - (self.red_add_count/100.0)), 
-                                      self.min_add_count))      
-        
- 
+                                      self.min_add_count))
+
+                # Update the batch data to drop the training data
+                self.batch = self.batch[-self.window:]
+        # print(self.window)
+
         return self
 
     def predict_proba_one(self, x):

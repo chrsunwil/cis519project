@@ -22,6 +22,7 @@ from .histogram_splitter import HistogramSplitter
 from .qo_splitter import QOSplitter
 from .sgt_quantizer import DynamicQuantizer, StaticQuantizer
 from .tebst_splitter import TEBSTSplitter
+from .iolin_splitter import IOLINSplitter
 
 __all__ = [
     "DynamicQuantizer",
@@ -34,4 +35,5 @@ __all__ = [
     "Splitter",
     "StaticQuantizer",
     "TEBSTSplitter",
+    "IOLINSplitter",
 ]

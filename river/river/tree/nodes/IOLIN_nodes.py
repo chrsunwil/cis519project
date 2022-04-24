@@ -1,11 +1,13 @@
 from river.utils.skmultiflow_utils import normalize_values_in_dict, round_sig_fig
+from ..splitter import IOLINSplitter
+from ..splitter.iolin_nominal_splitter import IOLINNominalSplitter
 
 from ..splitter.nominal_splitter_classif import NominalSplitterClassif
 from ..utils import do_naive_bayes_prediction
 from .leaf import IOLINLeaf
 
 
-class LeafMajorityClass(IOLINLeaf):
+class IOLINLeafMajorityClass(IOLINLeaf):
     """Leaf that always predicts the majority class.
 
     Parameters
@@ -26,7 +28,11 @@ class LeafMajorityClass(IOLINLeaf):
 
     @staticmethod
     def new_nominal_splitter():
-        return NominalSplitterClassif()
+        return IOLINNominalSplitter()
+
+    @staticmethod
+    def new_numeric_splitter():
+        return IOLINSplitter()
 
     def update_stats(self, y, sample_weight):
         try:
@@ -89,6 +95,7 @@ class LeafMajorityClass(IOLINLeaf):
         for label, proba in sorted(
             normalize_values_in_dict(self.stats, inplace=False).items()
         ):
-            text += f"\n\tP({label}) = {round_sig_fig(proba)}"
+            # print(self.total_weight)
+            text += f"\n\tP({label}) = {round_sig_fig(proba, significant_digits=3)}"
 
         return text

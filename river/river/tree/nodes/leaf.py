@@ -2,8 +2,12 @@ import abc
 import copy
 import numbers
 import typing
+import math
+
+import scipy
 
 from ..base import Leaf
+from ..splitter import IOLINSplitter
 from ..utils import BranchFactory
 
 
@@ -313,6 +317,7 @@ class IOLINLeaf(Leaf, abc.ABC):
             null_split = BranchFactory()
             best_suggestions.append(null_split)
         for att_id, splitter in self.splitters.items():
+            splitter.set_tree_weight_and_alpha(tree._train_weight_seen_by_model, tree.alpha)
             best_suggestion = splitter.best_evaluated_split_suggestion(
                 criterion, pre_split_dist, att_id, tree.binary_split
             )
