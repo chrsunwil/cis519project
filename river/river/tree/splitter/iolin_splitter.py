@@ -8,11 +8,14 @@ from .base import Splitter
 
 
 class IOLINSplitter(Splitter):
-    """Numeric attribute observer for classification tasks that is based on
-    a Binary Search Tree.
+    """Numeric attribute observer for classification tasks used by IOLIN, OLIN,
+    and IFN. Based on a Binary Search Tree, this splitter performs multiway splits
+    by recursively looking for the the best binary split point in a given interval.
+    It terminates when it fails to find a splitting that passes the likelihood-ratio
+    test.
 
-    This algorithm[^1] is also referred to as exhaustive attribute observer,
-    since it ends up storing all the observations between split attempts[^2].
+    This splitter is build heavily on top of a debugged version of
+    ExhaustiveSplitter
 
     This splitter cannot perform probability density estimations, so it does not work well
     when coupled with tree leaves using naive bayes models.
@@ -105,7 +108,6 @@ class IOLINSplitter(Splitter):
             right_dist.update(dict(Counter(right_dist) + Counter(parent_right)))
 
             if left_child:
-                # get the exact statistics of the parent value
                 exact_parent_dist = {}
                 exact_parent_dist.update(
                     dict(Counter(exact_parent_dist) + Counter(actual_parent_left))
@@ -248,7 +250,6 @@ class IOLINSplitter(Splitter):
                 att_idx=att_idx,
             )
             if left_split.merit > 0:
-                # current_best_option.merit += left_split.merit
                 current_best_option.children_stats = (
                     left_split.children_stats + current_best_option.children_stats[1:]
                 )
@@ -309,7 +310,6 @@ class ExhaustiveNode:
         for child in [self._left, self._right]:
             if child is None:
                 pass
-                # ret += ("\t" * (level + 1)) + "\n"
             else:
                 ret += child.__str__(level + 1, depth - 1)
         return ret
