@@ -6,7 +6,7 @@ from .base import SplitCriterion
 
 
 class IOLINInfoGainSplitCriterion(SplitCriterion):
-    """Information Gain split criterion.
+    """Functionally identical to the Information Gain split criterion.
 
     A measure of how often a randomly chosen element from the set would be
     incorrectly labeled if it was randomly labeled according to the
@@ -38,19 +38,6 @@ class IOLINInfoGainSplitCriterion(SplitCriterion):
         mutual_info = self.compute_entropy(pre_split_dist) - self.compute_entropy(
             post_split_dist
         )
-
-        # p_node = (node_weight / tree_weight)
-        #
-        # mutual_info *= p_node
-        #
-        # if mutual_info > 0:
-        #     likelihood_ratio = 2 * math.log(2) * int(node_weight) * mutual_info
-        #     num_attr_values = len(post_split_dist)
-        #     deg_freedom = (num_attr_values - 1)
-        #     critical_value = scipy.stats.chi2.ppf(1 - self.alpha, deg_freedom)
-        #     if likelihood_ratio < critical_value:
-        #         mutual_info = -math.inf
-
         return mutual_info
 
     @staticmethod

@@ -6,7 +6,7 @@ from .leaf import IOLINLeaf
 
 
 class IOLINLeafMajorityClass(IOLINLeaf):
-    """Leaf that always predicts the majority class.
+    """IOLIN Leaf that always predicts the majority class.
 
     Parameters
     ----------
@@ -17,7 +17,7 @@ class IOLINLeafMajorityClass(IOLINLeaf):
     splitter
         The numeric attribute observer algorithm used to monitor target statistics
         and perform split attempts.
-    paretns
+    parents
         Stores a list of tuples of pointers to this nodes parents and while child position they are
     kwargs
         Other parameters passed to the learning node.
