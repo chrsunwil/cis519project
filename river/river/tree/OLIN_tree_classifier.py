@@ -13,7 +13,7 @@ from .splitter import IOLINSplitter, Splitter
 
 
 class OLINTreeClassifier(IOLINTree, base.Classifier):
-    """Hoeffding Tree or Very Fast Decision Tree classifier.
+    """OLIN information network classifier.
 
     Parameters
     ----------
@@ -49,30 +49,39 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         If True, disable poor attributes to reduce memory usage.
     merit_preprune
         If True, enable merit-based tree pre-pruning.
+    max_window
+        The largest that a given window show be
+    min_add_count
+        The smallest increment allowed to the training period
+    max_add_count
+        The largest increment allowed to the training period
+    inc_add_count
+        How much to increase the training period when drift is not detected
+    red_add_count
+        How much to decrease the training period when drift is detected
+    alpha
+        Controls the statistical significance tests
+    max_err
+        Controls the max error allowed for detecting drift
 
     Notes
     -----
-    A Hoeffding Tree [^1] is an incremental, anytime decision tree induction algorithm that is
-    capable of learning from massive data streams, assuming that the distribution generating
-    examples does not change over time. Hoeffding trees exploit the fact that a small sample can
-    often be enough to choose an optimal splitting attribute. This idea is supported mathematically
-    by the Hoeffding bound, which quantifies the number of observations (in our case, examples)
-    needed to estimate some statistics within a prescribed precision (in our case, the goodness of
-    an attribute).
-
-    A theoretically appealing feature of Hoeffding Trees not shared by other incremental decision
-    tree learners is that it has sound guarantees of performance. Using the Hoeffding bound one
-    can show that its output is asymptotically nearly identical to that of a non-incremental
-    learner using infinitely many examples. Implementation based on MOA [^2].
+    An OLIN classifier [^1] is an information network which has been adapted for
+    online learning. It is well suited to dealing with concept drift, because a
+    new network can be created. The method behind OLIN is simple at it's core.
+    There is a training window and a verification window. An IN is built with the
+    training window. It is then verified with the verification window. If drift
+    is detected in the verification window, then there will be changes in the size
+    of the next verfication window. Otherwise, the verification window will increase.
+    This reeduces the number of times you create a new IN. It can generally
+    learn a data set more quickly than alternative classifiers, but can be
+    computationally expensive because the model is recreated relatively often.
+    See IOLIN for an improvement in this regard.
 
     References
     ----------
 
-    [^1]: G. Hulten, L. Spencer, and P. Domingos. Mining time-changing data streams.
-       In KDD’01, pages 97–106, San Francisco, CA, 2001. ACM Press.
-
-    [^2]: Albert Bifet, Geoff Holmes, Richard Kirkby, Bernhard Pfahringer.
-       MOA: Massive Online Analysis; Journal of Machine Learning Research 11: 1601-1604, 2010.
+    [^1]: Last, M. (2002) Online classification of nonstationary data streams, Intell. Data Anal. 6(2) 129–147.
 
     Examples
     --------
@@ -81,20 +90,18 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
     >>> from river import metrics
     >>> from river import tree
 
-    >>> gen = synth.Agrawal(classification_function=0, seed=42)
-    >>> # Take 1000 instances from the infinite data generator
-    >>> dataset = iter(gen.take(1000))
+    >>> gen = synth.Agrawal(seed=42, perturbation = .01, classification_function = 2)
+    >>> # Take 4000 instances from the infinite data generator
+    >>> dataset = iter(gen.take(4000))
 
-    >>> model = tree.HoeffdingTreeClassifier(
-    ...     grace_period=100,
-    ...     split_confidence=1e-5,
+    >>> model = tree.OLINTreeClassifier(
     ...     nominal_attributes=['elevel', 'car', 'zipcode']
     ... )
 
     >>> metric = metrics.Accuracy()
 
     >>> evaluate.progressive_val_score(dataset, model, metric)
-    Accuracy: 83.78%
+    Accuracy: 93.21%
     """
 
     def __init__(
@@ -155,7 +162,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
         self.max_err = max_err
 
-        # EQ. 7
+        # EQ. 7 [^1]
         numerator = scipy.stats.chi2.ppf(alpha, 1)
         H_p_err = -max_err * np.log2(max_err) - (1 - max_err) * np.log2(1 - max_err)
 
@@ -207,29 +214,26 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
         """Attempt to split a leaf.
         Parameters
         ----------
-        leaf
-            The leaf to evaluate.
-        parent
-            The leaf's parent.
-        parent_branch
-            Parent leaf's branch index.
+        leaves
+            The leaves to evaluate.
         kwargs
             Other parameters passed to the new branch.
         """
         leaves_split_suggestions = []
 
+        #Get the best split suggestions for each of the leaves to attempt to split
         for leaf in leaves:
             split_criterion = self._new_split_criterion()
             best_split_suggestions = leaf.best_split_suggestions(split_criterion, self)
-            # if len(leaves) == 3 and len(leaf.stats) > 1:
-            #     print(leaf)
             leaves_split_suggestions.append(best_split_suggestions)
 
         attributes = []
 
+        #Find the different attributes under consideration
         for split_suggestion in leaves_split_suggestions[0]:
             attributes.append(split_suggestion.feature)
 
+        #Remove the attributes which have already been split on
         temp_attributes = []
         for attribute in attributes:
             if attribute not in self.used_split_features:
@@ -239,34 +243,31 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
         attributes_merits = [0] * len(attributes)
 
+        #Sum the Merits across all of the leaves in consideration
         for counter in range(len(attributes)):
             for leaf_split_suggestion in leaves_split_suggestions:
                 for attribute_split in leaf_split_suggestion:
                     if attribute_split.feature == attributes[counter]:
-                        # TODO remove any negative merit
                         attributes_merits[counter] += max(attribute_split.merit, 0)
 
+        #Find the attribute with the highest merit
         sorted_attributes_merits = np.argsort(attributes_merits)[::-1]
 
         best_attr_idx = sorted_attributes_merits[0]
 
         return_leaves = []
-        # print(len(leaves_split_suggestions[2]))
-        # print(attributes)
-        # print(attributes_merits)
 
+        #For each of the leaves, split on the best attribute if the merit is positive
         for counter in range(len(leaves_split_suggestions)):
             for suggestion in leaves_split_suggestions[counter]:
 
                 if suggestion.merit > 0 and (
                     suggestion.feature == attributes[best_attr_idx]
-                ):  # NEGATIVE MERIT SHOULDN'T SPLIT?
+                ):
 
-                    #                 print(best_suggestion.feature)
                     best_suggestion = suggestion
                     split_decision = best_suggestion
 
-                    # print(split_decision)
                     if split_decision.feature is None:
                         # Pre-pruning - null wins
                         leaves[counter].deactivate()
@@ -278,6 +279,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                             split_decision.multiway_split,
                         )
 
+                        #Create the new leaves from the current split node
                         new_leaves = tuple(
                             self._new_leaf(
                                 {},
@@ -287,11 +289,6 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                             for initial_stats in split_decision.children_stats
                         )
 
-                        # Don't think this matters because I build whole network at one time
-                        #                 self.cur_depth += 1 #THIS IS ASSUMING THAT ONLY LAST LAYERS CAN SPLIT
-
-                        #                     print(self.cur_depth)
-
                         new_split = split_decision.assemble(
                             branch,
                             leaves[counter].stats,
@@ -300,12 +297,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                             **kwargs
                         )
 
-                        #                         print(new_leaves[1].__repr__())
-
-                        #                         print("Add ", len(new_leaves), "new leaves for ", best_suggestion.feature)
-
-                        #                         print(new_split.repr_split)
-
+                        #Set the parent pointers of the current new nodes
                         inc = 0
                         for new_leaf in new_leaves:
                             new_leaf.parents = [(new_split, inc)]
@@ -314,11 +306,9 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                         self._n_active_leaves -= 1
                         self._n_active_leaves += len(new_leaves)
 
+                        #Update the child points of the parents of the new nodes
                         parents = leaves[counter].parents
 
-                        #                         if parents is not None:
-                        #                             print(leaves[counter].parents[0][0].repr_split)
-                        #                         print(split_decision.feature, split_decision.children_stats, parents[0][0].repr_split if parents is not None else None)
                         if parents is None:
                             self._root = new_split
                         else:
@@ -329,13 +319,15 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
                         if self.first_attr is None:
                             self.first_attr = best_suggestion.feature
+
+                        #Add the new nodes to the return list so we can attempt split on them
                         return_leaves += new_leaves
-                        # print(len(return_leaves))
-        # print(f'for real: {len(return_leaves)}')
+
         return return_leaves
 
     def build_IN(self, train_batch, *, sample_weight=1.0):
 
+        #Reset the information known to the classifier
         self.classes = set()
 
         self._root = self._new_leaf()
@@ -349,14 +341,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
         nodes_to_attempt_split = [
             self._root
-        ]  # Reset so that we can learn the new layers
-        # self._train_weight_seen_by_model = 0
-        # for x, y, in train_batch:
-        #     self.classes.add(y)
-        #     if (self.first_attr is not None):
-        #         self.first_attr_vals.add(x[self.first_attr])
-        #     self._train_weight_seen_by_model += sample_weight
-        #     self._root.learn_one(x, y, sample_weight=sample_weight, tree=self)
+        ]
 
         while (
             len(nodes_to_attempt_split) > 0
@@ -364,21 +349,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
             self._train_weight_seen_by_model = 0
 
-            # Teach the current node all of the data
-            ##CREATE A BATCH UPDATE?
-
-            # for x, y, in train_batch:
-            #     if isinstance(self._root, DTBranch):
-            #         path = iter(self._root.walk(x, until_leaf=False))
-            #         while True:
-            #             aux = next(path, None)
-            #             if aux is None:
-            #                 break
-            #             p_node = node
-            #             node = aux
-            #     else:
-            #         node = self._root
-
+            #Teach the new nodes the relevant data by walking through the network
             for cur_node in nodes_to_attempt_split:
                 self._train_weight_seen_by_model = 0
                 for (
@@ -394,16 +365,9 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
             # attempt to split the current node. Get back the new children
             new_leaves = self._attempt_to_split(nodes_to_attempt_split)
-            # print(len(new_leaves))
-            #             print(self.used_split_features)
 
+            #Now attempte to split the new children
             nodes_to_attempt_split = new_leaves
-            # print(nodes_to_attempt_split)
-
-    #             print("Added new Layer")
-
-    #         print("Built an IN")
-    #         print(self._root.children[2].stats if isinstance(self._root, DTBranch) else None)
 
     def learn_one(self, x, y, *, sample_weight=1.0):
         """Train the model on instance x and corresponding target y.
@@ -454,12 +418,12 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                 err.update(y, self.predict_one(x))
             validation_err = err.get()
 
-            # EQ. 9
+            # EQ. 9 [^1]
             var_diff = (train_err * (1 - train_err)) / self.window + (
                 validation_err * (1 - validation_err)
             ) / self.add_count
 
-            # EQ. 10
+            # EQ. 10 [^1]
             max_diff = 2.326 * math.sqrt(var_diff)
 
             # detect concept drift
@@ -476,10 +440,7 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
             else:  # Yes, concept drift
                 # recalculate size of window
-                # EQ. 8
-                # print(train_err)
-                # print(validation_err)
-                # print(max_diff)
+                # EQ. 8 [^1]
                 if isinstance(self._root, DTBranch):
                     NT_ip = len(self._root.children)
                 else:
@@ -497,15 +458,12 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                     )
                     self.window = max(int(numerator / denomenator), self.min_add_count)
                 else:
-                    # # log2(0) handling
-                    # if train_err == 0:
 
                     # math or np might be more performant
                     H_train_err = -(
                         scipy.special.xlogy(train_err, train_err)
                         + scipy.special.xlog1py(1 - train_err, -train_err)
                     ) / np.log(2)
-                    #                 H_train_err= scipy.stats.entropy([train_err])
 
                     ys = dict.fromkeys(self.classes, 0)
 
@@ -519,8 +477,6 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                     numerator = scipy.stats.chi2.ppf(
                         1 - self.alpha, (NT_ip - 1) * (len(self.classes) - 1)
                     )
-                    # print(self.alpha, self.summary, self.classes)
-                    # print(numerator)
 
                     denomenator = 2 * np.log(
                         max(
@@ -534,20 +490,12 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
                             1.001,
                         )
                     )
-                    #                 print(H_A_i)
-                    #                 print(H_train_err)
-                    #                 print(train_err*np.log2(len(self.classes)-1))
-                    # #                 print((NT_ip-1)*(len(self.classes)-1))
-                    #                 print(numerator)
-                    #                 print(denomenator)
 
-                    # print(denomenator)
                     self.window = max(
                         self.min_add_count,
                         min(int(numerator / denomenator), self.max_window),
                     )
 
-                #
                 # Find the new validation window
                 self.add_count = int(
                     max(
@@ -558,7 +506,6 @@ class OLINTreeClassifier(IOLINTree, base.Classifier):
 
                 # Update the batch data to drop the training data
                 self.batch = self.batch[-self.window :]
-        # print(self.window)
 
         return self
 

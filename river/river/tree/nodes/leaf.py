@@ -191,7 +191,7 @@ class HTLeaf(Leaf, abc.ABC):
 
 
 class IOLINLeaf(Leaf, abc.ABC):
-    """Base leaf class to be used in Hoeffding Trees.
+    """Base leaf class to be used in OLIN and IOLIN Trees.
 
     Parameters
     ----------

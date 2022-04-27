@@ -30,7 +30,7 @@ except ImportError:
 
 
 class IOLINTree(ABC):
-    """Base class for Hoeffding Decision Trees.
+    """Base class for OLINE and IOLIN_nodes Trees.
 
     This is an **abstract class**, so it cannot be used directly. It defines base operations
     and properties that all the Hoeffding decision trees must inherit or implement according to
@@ -86,39 +86,6 @@ class IOLINTree(ABC):
         self._size_estimate_overhead_fraction: float = 1.0
         self._growth_allowed = True
         self._train_weight_seen_by_model: float = 0.0
-
-    @staticmethod
-    def _hoeffding_bound(range_val, confidence, n):
-        r"""Compute the Hoeffding bound, used to decide how many samples are necessary at each
-        node.
-
-        Notes
-        -----
-        The Hoeffding bound is defined as:
-
-        $\\epsilon = \\sqrt{\\frac{R^2\\ln(1/\\delta))}{2n}}$
-
-        where:
-
-        $\\epsilon$: Hoeffding bound.
-        $R$: Range of a random variable. For a probability the range is 1, and for an
-        information gain the range is log *c*, where *c* is the number of classes.
-        $\\delta$: Confidence. 1 minus the desired probability of choosing the correct
-        attribute at any given node.
-        $n$: Number of samples.
-
-        Parameters
-        ----------
-        range_val
-            Range value.
-        confidence
-            Confidence of choosing the correct attribute.
-        n
-            Number of processed samples.
-        """
-        return math.sqrt(
-            (range_val * range_val * math.log(1.0 / confidence)) / (2.0 * n)
-        )
 
     @property
     def max_size(self):
@@ -396,26 +363,7 @@ class IOLINTree(ABC):
 
         Notes
         -----
-        Currently, Label Combination Hoeffding Tree Classifier (for multi-label
-        classification) is not supported.
 
-        Examples
-        --------
-        >>> from river import datasets
-        >>> from river import tree
-        >>> model = tree.HoeffdingTreeClassifier(
-        ...    grace_period=5,
-        ...    split_confidence=1e-5,
-        ...    split_criterion='gini',
-        ...    max_depth=10,
-        ...    tie_threshold=0.05,
-        ... )
-        >>> for x, y in datasets.Phishing():
-        ...    model = model.learn_one(x, y)
-        >>> dot = model.draw()
-
-        .. image:: ../../docs/img/dtree_draw.svg
-            :align: center
         """
         counter = 0
 
