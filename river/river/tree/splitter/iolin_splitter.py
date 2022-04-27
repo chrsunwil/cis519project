@@ -110,13 +110,13 @@ class IOLINSplitter(Splitter):
                 exact_parent_dist.update(
                     dict(Counter(exact_parent_dist) + Counter(actual_parent_left))
                 )
-                exact_parent_dist.update(
+                exact_parent_dist = (
                     dict(
                         Counter(exact_parent_dist)
                         - Counter(current_node.class_count_left)
                     )
                 )
-                exact_parent_dist.update(
+                exact_parent_dist = (
                     dict(
                         Counter(exact_parent_dist)
                         - Counter(current_node.class_count_right)
@@ -124,7 +124,7 @@ class IOLINSplitter(Splitter):
                 )
 
                 # move the subtrees
-                left_dist.update(
+                left_dist = (
                     dict(Counter(left_dist) - Counter(current_node.class_count_right))
                 )
                 right_dist.update(
@@ -135,14 +135,12 @@ class IOLINSplitter(Splitter):
                 right_dist.update(
                     dict(Counter(right_dist) + Counter(exact_parent_dist))
                 )
-                left_dist.update(dict(Counter(left_dist) - Counter(exact_parent_dist)))
+                left_dist = (dict(Counter(left_dist) - Counter(exact_parent_dist)))
             else:
                 left_dist.update(
                     dict(Counter(left_dist) + Counter(current_node.class_count_left))
                 )
-                right_dist.update(
-                    dict(Counter(right_dist) - Counter(current_node.class_count_left))
-                )
+                right_dist = dict(Counter(right_dist) - Counter(current_node.class_count_left))
 
         post_split_dists = [left_dist, right_dist]
         merit = criterion.merit_of_split(pre_split_dist, post_split_dists)
@@ -214,6 +212,7 @@ class IOLINSplitter(Splitter):
             att_idx=att_idx,
             best_node=None,
         )
+
         if not isinstance(current_best_option.split_info, list):
             current_best_option.split_info = [current_best_option.split_info]
 
@@ -256,7 +255,7 @@ class IOLINSplitter(Splitter):
                 current_best_option.split_info = (
                     left_split.split_info + current_best_option.split_info
                 )
-        if len(current_best_option.children_stats[1]) > 1:
+        if len(current_best_option.children_stats[-1]) > 1:
             right_split = self._search_for_best_split_options(
                 current_node=best_node._right,
                 current_best_option=None,
@@ -304,3 +303,13 @@ class ExhaustiveNode:
                 self._right = ExhaustiveNode(val, label, sample_weight)
             else:
                 self._right.insert_value(val, label, sample_weight)
+
+    def __str__(self, level=0, depth=0):
+        ret = " " * level + repr(self.cut_point) + " " + str(self.class_count_left) + " " + str(self.class_count_right) + ("_" * depth) + "\n"
+        for child in [self._left, self._right]:
+            if child is None:
+                pass
+                # ret += ("\t" * (level + 1)) + "\n"
+            else:
+                ret += child.__str__(level + 1, depth - 1)
+        return ret
