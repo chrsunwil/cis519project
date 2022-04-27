@@ -13,7 +13,7 @@ from .splitter import IOLINSplitter, Splitter
 
 
 class IOLINTreeClassifier(IOLINTree, base.Classifier):
-    """Hoeffding Tree or Very Fast Decision Tree classifier.
+    """IOLIN information network classifier.
 
     Parameters
     ----------
@@ -49,30 +49,35 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
         If True, disable poor attributes to reduce memory usage.
     merit_preprune
         If True, enable merit-based tree pre-pruning.
+    max_window
+        The largest that a given window show be
+    min_add_count
+        The smallest increment allowed to the training period
+    max_add_count
+        The largest increment allowed to the training period
+    inc_add_count
+        How much to increase the training period when drift is not detected
+    red_add_count
+        How much to decrease the training period when drift is detected
+    alpha
+        Controls the statistical significance tests
+    max_err
+        Controls the max error allowed for detecting drift
 
     Notes
     -----
-    A Hoeffding Tree [^1] is an incremental, anytime decision tree induction algorithm that is
-    capable of learning from massive data streams, assuming that the distribution generating
-    examples does not change over time. Hoeffding trees exploit the fact that a small sample can
-    often be enough to choose an optimal splitting attribute. This idea is supported mathematically
-    by the Hoeffding bound, which quantifies the number of observations (in our case, examples)
-    needed to estimate some statistics within a prescribed precision (in our case, the goodness of
-    an attribute).
-
-    A theoretically appealing feature of Hoeffding Trees not shared by other incremental decision
-    tree learners is that it has sound guarantees of performance. Using the Hoeffding bound one
-    can show that its output is asymptotically nearly identical to that of a non-incremental
-    learner using infinitely many examples. Implementation based on MOA [^2].
+    An IOLIN classifier [^1] is an adaptation of an OLIN classifer for
+    online-learning. It is well suited to dealing with concept drift,
+    because a new network can be created. However, the improvement upon
+    OLIN is that IOLIN does not rebuild the network at each iteration
+    when given a new training window, instead extending the existing network
+    in order to save computation cost and improve speed.
 
     References
     ----------
 
-    [^1]: G. Hulten, L. Spencer, and P. Domingos. Mining time-changing data streams.
-       In KDD’01, pages 97–106, San Francisco, CA, 2001. ACM Press.
-
-    [^2]: Albert Bifet, Geoff Holmes, Richard Kirkby, Bernhard Pfahringer.
-       MOA: Massive Online Analysis; Journal of Machine Learning Research 11: 1601-1604, 2010.
+    [^1]: Cohen, L., Avrahami, G., Last, M., Kandel, A. (2008) Info-fuzzy algorithms for mining dynamic data streams.
+            Applied soft computing. 8 1283-1294.
 
     Examples
     --------
@@ -81,20 +86,18 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
     >>> from river import metrics
     >>> from river import tree
 
-    >>> gen = synth.Agrawal(classification_function=0, seed=42)
-    >>> # Take 1000 instances from the infinite data generator
-    >>> dataset = iter(gen.take(1000))
+    >>> gen = synth.Agrawal(seed=42, perturbation = .01, classification_function = 2)
+    >>> # Take 4000 instances from the infinite data generator
+    >>> dataset = iter(gen.take(4000))
 
-    >>> model = tree.HoeffdingTreeClassifier(
-    ...     grace_period=100,
-    ...     split_confidence=1e-5,
+    >>> model = tree.OLINTreeClassifier(
     ...     nominal_attributes=['elevel', 'car', 'zipcode']
     ... )
 
     >>> metric = metrics.Accuracy()
 
     >>> evaluate.progressive_val_score(dataset, model, metric)
-    Accuracy: 83.78%
+    Accuracy: 80.92%
     """
 
     def __init__(
@@ -207,34 +210,30 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
 
         return split_criterion
 
-    def _attempt_to_split(self, leaves, update=False, **kwargs):
+    def _attempt_to_split(self, leaves, **kwargs):
         """Attempt to split a leaf.
         Parameters
         ----------
-        leaf
-            The leaf to evaluate.
-        parent
-            The leaf's parent.
-        parent_branch
-            Parent leaf's branch index.
+        leaves
+            The leaves to evaluate.
         kwargs
             Other parameters passed to the new branch.
         """
-        print("attempt_to_split()")
-        leaves_split_suggestions = []  ## added from OLIN_tree_classifier
+        leaves_split_suggestions = []
 
+        # Get the best split suggestions for each of the leaves to attempt to split
         for leaf in leaves:
             split_criterion = self._new_split_criterion()
             best_split_suggestions = leaf.best_split_suggestions(split_criterion, self)
-            # if len(leaves) == 3 and len(leaf.stats) > 1:
-            #     print(leaf)
             leaves_split_suggestions.append(best_split_suggestions)
 
         attributes = []
 
+        # Find the different attributes under consideration
         for split_suggestion in leaves_split_suggestions[0]:
             attributes.append(split_suggestion.feature)
 
+        # Remove the attributes which have already been split on
         temp_attributes = []
         for attribute in attributes:
             if attribute not in self.used_split_features:
@@ -244,17 +243,20 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
 
         attributes_merits = [0] * len(attributes)
 
+        # Sum the Merits across all of the leaves in consideration
         for counter in range(len(attributes)):
             for leaf_split_suggestion in leaves_split_suggestions:
                 for attribute_split in leaf_split_suggestion:
                     if attribute_split.feature == attributes[counter]:
-                        # TODO remove any negative merit
                         attributes_merits[counter] += max(attribute_split.merit, 0)
 
         sorted_attributes_merits = np.argsort(attributes_merits)[::-1]
 
+        # Find the attribute with the highest merit
         best_attr_idx = sorted_attributes_merits[0]
 
+        # Find the attribute with the second-highest merit
+        # For each of the leaves, store the second-best attribute if the merit is positive
         second_suggestion = None
         if len(sorted_attributes_merits) > 1:
 
@@ -269,62 +271,21 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                         second_suggestion = suggestion
                         self.most_recent_second = second_suggestion.feature
 
-                        # if split_decision.feature is None:
-                        #     # Pre-pruning - null wins
-                        #     leaves[counter].deactivate()
-                        #     self._n_inactive_leaves += 1
-                        #     self._n_active_leaves -= 1
-                        # else:
-                        #     branch = self._branch_selector(
-                        #         split_decision.numerical_feature,
-                        #         split_decision.multiway_split,
-                        #     )
-                        #
-                        #     new_leaves = tuple(
-                        #         self._new_leaf(
-                        #             {},
-                        #             parent=leaves[counter],
-                        #             parents=leaves[counter].parents,
-                        #         )
-                        #         for initial_stats in split_decision.children_stats
-                        #     )
-                        #     self.alternate_last_layer = new_leaves
-
         return_leaves = []
-        # print(len(leaves_split_suggestions[2]))
-        # print(attributes)
-        # print(attributes_merits)
 
+        # For each of the leaves, split on the best attribute if the merit is positive
         for counter in range(len(leaves_split_suggestions)):
             for suggestion in leaves_split_suggestions[counter]:
 
                 if suggestion.merit > 0 and (
                         suggestion.feature == attributes[best_attr_idx]
-                ):  # NEGATIVE MERIT SHOULDN'T SPLIT?
-
-                    #                 print(best_suggestion.feature)
+                ):
                     best_suggestion = suggestion
-
-                    print("tree weight", self._train_weight_seen_by_model)
-                    print("MI in att_to_spl", best_suggestion.merit)
-                    print("children stats in att_to_spl", best_suggestion.children_stats)
-                    print("thresholds in att_to_slp:", best_suggestion.split_info)
-
-                    # if this is update current network, compare second suggestion to best suggestion
-                    # if (update is True) and (second_suggestion.merit > best_suggestion.merit):
-                    #     # remove previous best feature from set of used features
-                    #     self.used_split_features.remove(best_suggestion)
-                    #     best_suggestion = second_suggestion
-                    #     # TODO: remove leaves?
-
-                    # print("best suggestion:", best_suggestion.feature)
-                    # print("second suggestion:", second_suggestion.feature)
 
                     split_decision = best_suggestion
 
                     self.most_recent_best = split_decision.feature
 
-                    # print(split_decision)
                     if split_decision.feature is None:
                         # Pre-pruning - null wins
                         leaves[counter].deactivate()
@@ -336,6 +297,7 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                             split_decision.multiway_split,
                         )
 
+                        # Create the new leaves from the current split node
                         new_leaves = tuple(
                             self._new_leaf(
                                 {},
@@ -345,11 +307,6 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                             for initial_stats in split_decision.children_stats
                         )
 
-                        # Don't think this matters because I build whole network at one time
-                        #                 self.cur_depth += 1 #THIS IS ASSUMING THAT ONLY LAST LAYERS CAN SPLIT
-
-                        #                     print(self.cur_depth)
-
                         new_split = split_decision.assemble(
                             branch,
                             leaves[counter].stats,
@@ -358,12 +315,7 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                             **kwargs
                         )
 
-                        #                         print(new_leaves[1].__repr__())
-
-                        #                         print("Add ", len(new_leaves), "new leaves for ", best_suggestion.feature)
-
-                        #                         print(new_split.repr_split)
-
+                        # Set the parent pointers of the current new nodes
                         inc = 0
                         for new_leaf in new_leaves:
                             new_leaf.parents = [(new_split, inc)]
@@ -372,31 +324,34 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                         self._n_active_leaves -= 1
                         self._n_active_leaves += len(new_leaves)
 
-                        parents = leaves[counter].parents  # leaves[counter] -- former leaf
-                        # print("leaves[counter]=",leaves[counter])
+                        # Update the child points of the parents of the new nodes
+                        parents = leaves[counter].parents
 
-                        #                         if parents is not None:
-                        #                             print(leaves[counter].parents[0][0].repr_split)
-                        #                         print(split_decision.feature, split_decision.children_stats, parents[0][0].repr_split if parents is not None else None)
                         if parents is None:
                             self._root = new_split
                         else:
                             for parent, parent_branch in parents:
                                 parent.children[parent_branch] = new_split
 
+                        # Track the features that have been split on already
                         self.used_split_features.add(best_suggestion.feature)
 
                         if self.first_attr is None:
                             self.first_attr = best_suggestion.feature
+
+                        # Add the new nodes to the return list so we can attempt split on them
                         return_leaves += new_leaves
 
-                        # print(len(return_leaves))
-        # print(f'for real: {len(return_leaves)}')
         return return_leaves
 
-    def build_IN(self, train_batch, *, sample_weight=1.0): #split_last_layer=False
+    def build_IN(self, train_batch, *, sample_weight=1.0):
+        """
+        build_IN learns a new Info-Fuzzy Network on a given training window
+        :param train_batch: current training window
+        :param sample_weight: weight of sample
+        """
 
-        # if split_last_layer is False:
+        # Reset the information known to the classifier
         self.classes = set()
 
         self._root = self._new_leaf()
@@ -408,7 +363,7 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
         self.first_attr = None
         self.first_attr_vals = set()
 
-        nodes_to_attempt_split = [self._root]  # Reset so that we can learn the new layers
+        nodes_to_attempt_split = [self._root]
         self.last_leaf_layer = [self._root]
 
         while (
@@ -417,10 +372,9 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
 
             self._train_weight_seen_by_model = 0
 
-            # Teach the current node all of the data
-
+            # Teach the new nodes the relevant data by walking through the network
             for cur_node in nodes_to_attempt_split:
-                # print("cur_node", cur_node)
+
                 self._train_weight_seen_by_model = 0
                 for (
                         x,
@@ -434,65 +388,31 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                         cur_node.learn_one(x, y, sample_weight=sample_weight, tree=self)
 
             # attempt to split the current node. Get back the new children
-            # print(len(nodes_to_attempt_split))
-
             new_leaves = self._attempt_to_split(nodes_to_attempt_split)
 
-            print("Children stats after att_to_spl")
-            if isinstance(self._root, DTBranch):
-                for child in self._root.children:
-                    print(child.stats)
-            # print("new_leaves1: ", new_leaves)
-            # print("used_split_features: ", self.used_split_features)
-
-            # self.last_hidden_layer = nodes_to_attempt_split
+            # Now attempt to split the new children
             nodes_to_attempt_split = new_leaves
-            # print(nodes_to_attempt_split)
 
-            ### tracking last hidden layer
-            # print("nodestosplit:",len(nodes_to_attempt_split))
-
+            # Store the last layer added to the tree
             if len(new_leaves) > 0:
-            # if nodes_to_attempt_split is not None:
-            #     last_hidden_layer = []
-            #     for node in nodes_to_attempt_split:
-            #         if node.parents not in last_hidden_layer:
-            #             last_hidden_layer.append(node.parents[0][0])
-            #             # print("PARENTS:")
-            #             # print(node.parents[0][0])
-            #     self.last_hidden_layer = last_hidden_layer  # TODO: this has duplicates of same branch from each child
-
                 self.last_leaf_layer = new_leaves
-                # print("new_leaves2: ", new_leaves)
-            # print("last layer in build_IN:", self.last_hidden_layer)
-
-            # print("last layer attsplt:", self.last_hidden_layer)
-
-            # print(self.last_hidden_layer)
-            #
-        print("Added new Layer")
-            #
-            # print("Built an IN")
-        # print("Children stats after buildIN")
-        # if isinstance(self._root, DTBranch):
-        #     for child in self._root.children:
-        #         print(child.stats)
 
     def update_IN(self, train_batch, *, sample_weight=1.0):
+        """
+        update_IN updates an Info-Fuzzy Network on a given training window by spliltting the nodes on the final layer of
+        the current network by splitting on attributes not included in the network
+        :param train_batch: current training window
+        :param sample_weight: weight of sample
+        """
 
         if self.last_leaf_layer[0] == self._root:
-            print("calling buildIN on updateIN")
             self.build_IN(train_batch, sample_weight=sample_weight)
-            print("out")
             return
 
         self.replace_last_layer(train_batch)
 
         nodes_to_attempt_split = self.last_leaf_layer
 
-        print(nodes_to_attempt_split[0])
-
-        # copy nodes, get rid of data, update references
         nodes_to_attempt_split = [
             self._new_leaf(
                 {},
@@ -507,18 +427,12 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                 parent.children[parent_branch] = node
 
         while len(nodes_to_attempt_split) > 0:
-            print("in", len(self.last_leaf_layer))
 
-            # print("nodes to split updateIN:", nodes_to_attempt_split)
-
-            # from build_IN
             self._train_weight_seen_by_model = 0
 
-            # Teach the current node all of the data
-
+            # Teach the new nodes the relevant data by walking through the network
             for cur_node in nodes_to_attempt_split:
 
-                # print("cur_node: ", cur_node)
                 self._train_weight_seen_by_model = 0
                 for (
                         x,
@@ -534,64 +448,49 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
             new_leaves = self._attempt_to_split(nodes_to_attempt_split)
             nodes_to_attempt_split = new_leaves
 
+            # Store the last layer added to the network
             if len(new_leaves) > 0:
                 self.last_leaf_layer = new_leaves
 
-            if len(self.last_leaf_layer) > 0:
-                print("Added a new layer")
-            else:
-                print("No splits?")
+    def check_split_validity(self, branch, branch_parent):
+        """
+        Check split validity traverses the current network, pruning the tree if the previous splits are no longer
+        statistically significant given the new data
+        :param branch: a given branch in the network
+        :param branch_parent: the parent node of branch
+        """
 
-    def check_split_validity(self, branch, branch_parent):  # branch
-        print("check split val")
-
+        # calculate the conditional mutual info of the branch
         criterion = self._new_split_criterion()
         # likelihood ratio test
         children_stats = []
         for child in branch.children:
             children_stats.append(child.stats)
 
-        # weight of current node
-        # branch_weight = sum(branch.stats.values())  # does this make sense?
-        # tree_weight = sum(self._root.stats.values())
-        # print(tree_weight, self._train_weight_seen_by_model)
-
         mutual_info = criterion.merit_of_split(branch.stats, children_stats,
                                                node_weight=branch.total_weight,
                                                tree_weight=self._train_weight_seen_by_model)
-                                               # tree_weight=tree_weight)
-        # p_node = branch_weight / self._train_weight_seen_by_model
+
         p_node = branch.total_weight / self._train_weight_seen_by_model
         mutual_info *= p_node
+
+        # perform likelihood ratio-test
         if mutual_info > 0:
             likelihood_ratio = (
                     2 * math.log(2) * int(branch.total_weight) * mutual_info
             )
-            num_attr_values = len(branch.children)  # len(branch.children
+            num_attr_values = len(branch.children)
             deg_freedom = num_attr_values - 1
             critical_value = scipy.stats.chi2.ppf(1 - self.alpha, deg_freedom)
 
-            if likelihood_ratio < critical_value:  # TODO: am i doing likelihood statistic right?
-                print("MI:", mutual_info)
-                print("branch stats:", branch.stats)
-                print("children stats:", children_stats)
-                print("critical val:", critical_value)
-                print("branch weight:", branch.total_weight)
-                print("tree weight:", self._train_weight_seen_by_model)
+            if likelihood_ratio < critical_value:
 
-                # turn branch into leaf
+                # remove split and make branch a leaf
                 if branch_parent is None:
                     # if branch has no parents, make root new leaf
                     self._root = self._new_leaf(branch.stats, None)
                     self.last_leaf_layer = [self._root]
-                    print("unsplit branch (root)")
                     self._n_active_leaves = 1
-                    # print("feature:", branch.feature)
-                    # print(branch.stats)
-                    # print(mutual_info)
-                    # print(p_node)
-                    # print(likelihood_ratio)
-                    # print(critical_value)
                 else:
                     # initialize new leaf and replace the correct child of branch_parent
                     new_leaf = self._new_leaf(branch.stats, branch_parent)
@@ -600,17 +499,20 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                     for idx, child in enumerate(branch_parent.children):
                         if isinstance(child, DTBranch) and child.feature == branch.feature:
                             new_children[idx] = new_leaf
-                    print("unsplit branch")
-
-                    # TODO: update active/inactive leaves?
                     self._n_active_leaves -= 1
 
             else:
-                for child in branch.children:  # root.iter_branches()
+                # traverse tree
+                for child in branch.children:
                     if isinstance(child, DTBranch):
                         self.check_split_validity(child, branch)
 
     def replace_last_layer(self, train_batch):
+        """
+        replace_last_layer compares the conditional mutual entropy of the current last hidden layer to the second-best
+        attribute of the last hidden layer and conditionally replaces the layer
+        :param train_batch: current training window
+        """
 
         last_hidden_depth = self.last_leaf_layer[0].depth - 1
 
@@ -674,12 +576,9 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
         -----
         Training tasks:
 
-        * If the tree is empty, create a leaf node as the root.
-        * If the tree is already initialized, find the corresponding leaf for
-          the instance and update the leaf node statistics.
-        * If growth is allowed and the number of instances that the leaf has
-          observed between split attempts exceed the grace period then attempt
-          to split.
+        * If the tree is empty, build an IFN
+        * If concept drift is not detected, perform Update_Current_Network
+        * If concept drift is detected, rebuild IFN
         """
 
         # Add to the batch
@@ -687,8 +586,8 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
 
         if len(self.batch) >= self.window + self.add_count:
 
-            if self._root is None:  # or isinstance(self._root, IOLINLeafMajorityClass):
-            # Build new IN model
+            if self._root is None:
+                # Build new IN model if not initialized
                 self.build_IN(
                     train_batch=self.batch[: self.window], sample_weight=sample_weight
                 )
@@ -714,29 +613,14 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
 
             # detect concept drift
             if (validation_err - train_err) < max_diff:  # No concept drift
-                print("no drift")
 
-                print(self._root)
+                # Check split validity on all branches in network
                 if isinstance(self._root, DTBranch):
-                    print("Root is branch")
-                    # print(self._root.stats)
                     self.check_split_validity(self._root, None)
 
-                # TODO: compare current last layer to second best attribute
-                # self.last_hidden_layer[0].stats
+                # conditionally replace last layer and perform New_Split_Process
+                self.update_IN(train_batch=self.batch[: self.window], sample_weight=sample_weight)
 
-                # print("Last layer exists: ", self.last_leaf_layer)
-                # for node in self.last_hidden_layer:
-                #     print(node)
-
-                print("calling update_IN()")
-                # print(self._root.stats, self.last_leaf_layer.stats)
-                self.update_IN(train_batch=self.batch[: self.window], sample_weight=sample_weight)  # TODO: Sample weight or cur weight
-
-                # print("calling attempt to split on")#, self.last_hidden_layer[0].feature)
-                # self._attempt_to_split([self.last_hidden_layer[0]])  # does a class variable work here?
-
-                # TODO: What to do with windows
                 # New Validation and Train windows
                 self.add_count = int(
                     min(
@@ -748,12 +632,7 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                 self.batch = self.batch[-self.window:]
 
             else:  # Yes, concept drift
-                print("drift detected")
-                # recalculate size of window
-                # EQ. 8
-                # print(train_err)
-                # print(validation_err)
-                # print(max_diff)
+
                 if isinstance(self._root, DTBranch):
                     NT_ip = len(self._root.children)
                 else:
@@ -786,14 +665,12 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                         ys[y] += 1
 
                     probs = np.array(list(ys.values())) / sum(ys.values())
-                    #                 print(probs)
+
                     H_A_i = scipy.stats.entropy(probs)
 
                     numerator = scipy.stats.chi2.ppf(
                         1 - self.alpha, (NT_ip - 1) * (len(self.classes) - 1)
                     )
-                    # print(self.alpha, self.summary, self.classes)
-                    # print(numerator)
 
                     denomenator = 2 * np.log(
                         max(
@@ -807,13 +684,6 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                             1.001,
                         )
                     )
-                    #                 print(H_A_i)
-                    #                 print(H_train_err)
-                    #                 print(train_err*np.log2(len(self.classes)-1))
-                    # #                 print((NT_ip-1)*(len(self.classes)-1))
-                    #                 print(numerator)
-                    #                 print(denomenator)
-                    # print(denomenator)
                     self.window = max(
                         self.min_add_count,
                         min(int(numerator / denomenator), self.max_window),
@@ -832,82 +702,9 @@ class IOLINTreeClassifier(IOLINTree, base.Classifier):
                 self.batch = self.batch[-self.window:]
 
                 # build new IN
-                # self.build_IN(
-                #     train_batch=self.batch[: self.window], sample_weight=sample_weight, split_last_layer=False
-                # )
-
-        # print(self.window)
-
-        # return self (down below)
-        """
-        #### Existing code from river #####
-        # Updates the set of observed classes
-        self.classes.add(y)
-
-        self._train_weight_seen_by_model += sample_weight
-
-        if self._root is None:
-            self._root = self._new_leaf()
-            self._n_active_leaves = 1
-
-        p_node = None
-
-        node = None
-        if isinstance(self._root, DTBranch):
-            path = iter(self._root.walk(x, until_leaf=False))
-            while True:
-                aux = next(path, None)
-                if aux is None:
-                    break
-                p_node = node
-                node = aux
-        else:
-            node = self._root
-
-        if isinstance(node, IOLINLeaf):
-            node.learn_one(x, y, sample_weight=sample_weight, tree=self)
-            if self._growth_allowed and node.is_active():
-                if node.depth >= self.max_depth:  # Max depth reached
-                    node.deactivate()
-                    self._n_active_leaves -= 1
-                    self._n_inactive_leaves += 1
-                else:
-                    weight_seen = node.total_weight
-                    weight_diff = weight_seen - node.last_split_attempt_at
-                    if weight_diff >= self.grace_period:
-                        p_branch = (
-                            p_node.branch_no(x)
-                            if isinstance(p_node, DTBranch)
-                            else None
-                        )
-                        self._attempt_to_split(node, p_node, p_branch)
-                        node.last_split_attempt_at = weight_seen
-        else:
-            while True:
-                # Split node encountered a previously unseen categorical value (in a multi-way
-                #  test), so there is no branch to sort the instance to
-                if node.max_branches() == -1 and node.feature in x:
-                    # Create a new branch to the new categorical value
-                    leaf = self._new_leaf(parent=node)
-                    node.add_child(x[node.feature], leaf)
-                    self._n_active_leaves += 1
-                    node = leaf
-                # The split feature is missing in the instance. Hence, we pass the new example
-                # to the most traversed path in the current subtree
-                else:
-                    _, node = node.most_common_path()
-                    # And we keep trying to reach a leaf
-                    if isinstance(node, DTBranch):
-                        node = node.traverse(x, until_leaf=False)
-                # Once a leaf is reached, the traversal can stop
-                if isinstance(node, IOLINLeaf):
-                    break
-            # Learn from the sample
-            node.learn_one(x, y, sample_weight=sample_weight, tree=self)
-
-        if self._train_weight_seen_by_model % self.memory_estimate_period == 0:
-            self._estimate_model_size()
-        """
+                self.build_IN(
+                    train_batch=self.batch[: self.window], sample_weight=sample_weight
+                )
 
         return self
 
