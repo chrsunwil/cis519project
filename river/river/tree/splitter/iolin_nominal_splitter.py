@@ -9,7 +9,8 @@ from .base import Splitter
 
 
 class IOLINNominalSplitter(Splitter):
-    """Splitter utilized to monitor nominal features in classification tasks.
+    """Splitter utilized to monitor nominal features in classification tasks
+    for IOLIN trees. Performs the likelihood ratio test.
 
     As the monitored feature is nominal, it already has well-defined partitions. Hence,
     this splitter uses dictionary structures to keep class counts for each incoming category.
